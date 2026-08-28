@@ -1,0 +1,59 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ================================================================
+         Reusable control styles — Metric cards, nav items, etc.
+         ================================================================ -->
+
+    <!-- ── Metric Card (温度/频率/风扇转速) ── -->
+    <Style x:Key="MetricCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource BrushBgCard}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushBorderCard}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="16,12" />
+    </Style>
+
+    <!-- ── Section Header ── -->
+    <Style x:Key="SectionHeader" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontDisplay}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}" />
+        <Setter Property="Margin" Value="0,24,0,12" />
+    </Style>
+
+    <!-- ── Separator ── -->
+    <Style x:Key="NeonSeparator" TargetType="Rectangle">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Fill" Value="{StaticResource BrushBorderCard}" />
+    </Style>
+
+    <!-- ── Tooltip ── -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{StaticResource BrushBgTertiary}" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushBorderCard}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ── ScrollViewer (transparent) ── -->
+    <Style TargetType="ScrollViewer">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+</ResourceDictionary>

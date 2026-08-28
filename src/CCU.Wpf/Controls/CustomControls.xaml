@@ -1,0 +1,151 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:CCU.Wpf.Controls">
+
+    <!-- NavItem -->
+    <Style TargetType="local:NavItem">
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:NavItem">
+                    <Button Command="{TemplateBinding NavCmd}" CommandParameter="{TemplateBinding Param}" Cursor="Hand" BorderThickness="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="root" Padding="14,10" CornerRadius="8" Background="Transparent">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="4" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border x:Name="indicator" Grid.Column="0" Width="3" CornerRadius="2" Background="Transparent" VerticalAlignment="Stretch" Margin="-4,0,0,0" />
+                                        <TextBlock x:Name="icon" Grid.Column="1" Text="{Binding Icon, RelativeSource={RelativeSource AncestorType=local:NavItem}}" FontSize="15" VerticalAlignment="Center" Foreground="#FF94A3B8" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Label, RelativeSource={RelativeSource AncestorType=local:NavItem}}" FontSize="13" VerticalAlignment="Center" Margin="10,0,0,0" x:Name="label" Foreground="#FF94A3B8" />
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="root" Property="Background" Value="#20FFFFFF" />
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding Active, RelativeSource={RelativeSource AncestorType=local:NavItem}}" Value="True">
+                                        <Setter TargetName="root" Property="Background" Value="#1E00D4AA" />
+                                        <Setter TargetName="indicator" Property="Background" Value="#FF00D4AA" />
+                                        <Setter TargetName="icon" Property="Foreground" Value="#FF00D4AA" />
+                                        <Setter TargetName="label" Property="Foreground" Value="#FFF1F5F9" />
+                                    </DataTrigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ModeChip -->
+    <Style TargetType="local:ModeChip">
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:ModeChip">
+                    <Button Command="{TemplateBinding Cmd}" CommandParameter="{TemplateBinding Mode}" Cursor="Hand" BorderThickness="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="root" Padding="16,6" CornerRadius="6" Background="#0DFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
+                                    <TextBlock Text="{Binding Label, RelativeSource={RelativeSource AncestorType=local:ModeChip}}" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding ColorAccent, RelativeSource={RelativeSource AncestorType=local:ModeChip}}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="root" Property="Background" Value="#18FFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- MetricDisplay -->
+    <Style TargetType="local:MetricDisplay">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:MetricDisplay">
+                    <Border Padding="16,14" CornerRadius="10" Background="#1AFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="{TemplateBinding SubLabel}" FontSize="11" Foreground="#FF475569" />
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock Text="{TemplateBinding Value}" FontSize="28" FontWeight="SemiBold"
+                                           FontFamily="Cascadia Code, Consolas, Courier New" Foreground="{TemplateBinding AccentColor}" />
+                                <TextBlock Text="{TemplateBinding Unit}" FontSize="14" Foreground="#FF94A3B8" VerticalAlignment="Bottom" Margin="4,0,0,4" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- EffectChip -->
+    <Style TargetType="local:EffectChip">
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:EffectChip">
+                    <Button Command="{TemplateBinding Command}" CommandParameter="{TemplateBinding CommandParameter}" Cursor="Hand" BorderThickness="0" Padding="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="root" Padding="14,8" CornerRadius="6" Background="#1AFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
+                                    <TextBlock Text="{Binding Label, RelativeSource={RelativeSource AncestorType=local:EffectChip}}" FontSize="12"
+                                               Foreground="{Binding Highlight, RelativeSource={RelativeSource AncestorType=local:EffectChip}}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="root" Property="Background" Value="#22FFFFFF" />
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsActive, RelativeSource={RelativeSource AncestorType=local:EffectChip}}" Value="True">
+                                        <Setter TargetName="root" Property="BorderBrush" Value="#FF00D4AA" />
+                                        <Setter TargetName="root" Property="Background" Value="#2200D4AA" />
+                                    </DataTrigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- DisplayProfileChip -->
+    <Style TargetType="local:DisplayProfileChip">
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Width" Value="140" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:DisplayProfileChip">
+                    <Border x:Name="root" Padding="16,12" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Label, RelativeSource={RelativeSource TemplatedParent}}" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{Binding Highlight, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <TextBlock Text="{Binding Desc, RelativeSource={RelativeSource TemplatedParent}}" FontSize="11" Foreground="#FF94A3B8" Margin="0,3,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="root" Property="Background" Value="#22FFFFFF" />
+                        </Trigger>
+                        <DataTrigger Binding="{Binding IsActive, RelativeSource={RelativeSource TemplatedParent}}" Value="True">
+                            <Setter TargetName="root" Property="BorderBrush" Value="#FF00D4AA" />
+                            <Setter TargetName="root" Property="Background" Value="#2200D4AA" />
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

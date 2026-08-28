@@ -1,0 +1,43 @@
+# CCU.Alternative — 保守 .gitignore
+# 原则：只入库自己写的源码和文档；构建产物、二进制、厂商派生文件一律排除。
+
+# === 构建产物 ===
+bin/
+obj/
+[Bb]uild/
+[Bb]uildOutput/
+publish/*
+!publish/*.ps1
+!publish/*.bat
+!publish/*.md
+
+# === 二进制 / 编译产物（含厂商 DLL 红线） ===
+*.dll
+*.exe
+*.pdb
+*.sys
+*.cat
+*.cer
+*.lib
+*.exp
+*.bin
+*.dat
+*.cache
+*.log
+*.user
+*.suo
+
+# === 厂商派生材料（不可入库、不可二次分发） ===
+M2Mqtt.Net.dll
+decompiled/
+*-installed-copy/
+vendor/
+
+# === 运行时产物 ===
+*.runtimeconfig.json
+*.deps.json
+
+# === IDE ===
+.vs/
+.idea/
+*.sln.docstates

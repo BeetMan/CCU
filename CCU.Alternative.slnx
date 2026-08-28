@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CCU.Cli/CCU.Cli.csproj" />
+    <Project Path="src/CCU.Service/CCU.Service.csproj" />
+    <Project Path="src/CCU.Shared/CCU.Shared.csproj" />
+    <Project Path="src/CCU.Wpf/CCU.Wpf.csproj" />
+    <Project Path="src/EcProbe/EcProbe.csproj" />
+    <Project Path="src/MqttProbe/MqttProbe.csproj" />
+    <Project Path="src/QuickDiag/QuickDiag.csproj" />
+  </Folder>
+</Solution>

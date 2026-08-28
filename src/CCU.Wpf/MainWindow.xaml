@@ -1,0 +1,195 @@
+<Window x:Class="CCU.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:CCU.Wpf.ViewModels"
+        xmlns:ctrl="clr-namespace:CCU.Wpf.Controls"
+        xmlns:conv="clr-namespace:CCU.Wpf.Converters"
+        Width="1024" Height="680"
+        MinWidth="860" MinHeight="560"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="CanResizeWithGrip"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        Title="智控中心">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <conv:EqualityConverter x:Key="EqConverter" />
+        <conv:MultiParamConverter x:Key="ParamEq" />
+        <conv:TemperatureToColorConverter x:Key="TempColor" />
+        <conv:UsageToColorConverter x:Key="UsageColor" />
+        <conv:DutyToHeightConverter x:Key="DutyHeight" />
+        <conv:TempToXConverter x:Key="TempX" />
+    </Window.Resources>
+
+    <!-- 📦 主容器 — 玻璃基底 + 圆角裁剪 -->
+    <Grid>
+        <Border Background="#F20B0E14" CornerRadius="14">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="40" ShadowDepth="0" Color="#80000000" />
+            </Border.Effect>
+        </Border>
+
+        <Border CornerRadius="14" ClipToBounds="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="228" />
+                    <ColumnDefinition Width="1" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- ═════════════════════════════════
+                     左侧导航栏
+                     ═════════════════════════════════ -->
+                <Border Grid.Column="0" Background="#E80D101A">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Logo -->
+                        <StackPanel Margin="20,28,20,24">
+                            <TextBlock Text="MACHE NIKE" FontSize="16" FontWeight="Bold"
+                                       Foreground="{StaticResource BrushAccentPrimary}"
+                                       FontFamily="{StaticResource FontDisplay}" />
+                            <TextBlock Text="智控中心" FontSize="12"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <!-- 菜单项 -->
+                        <StackPanel Grid.Row="1" Margin="8,0">
+                            <ctrl:NavItem Icon="⚡" Label="性能模式" Param="performance" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=performance}" />
+                            <ctrl:NavItem Icon="🎮" Label="GPU 设置" Param="gpu" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=gpu}" />
+                            <ctrl:NavItem Icon="🌀" Label="风扇控制" Param="fan" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=fan}" />
+                            <ctrl:NavItem Icon="⌨" Label="键盘 RGB" Param="keyboard" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=keyboard}" />
+                            <ctrl:NavItem Icon="🖥" Label="显示设置" Param="display" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=display}" />
+                            <ctrl:NavItem Icon="🔌" Label="设备开关" Param="devices" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=devices}" />
+                            <ctrl:NavItem Icon="⚙" Label="系统设置" Param="settings" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=settings}" />
+                            <ctrl:NavItem Icon="🎨" Label="设计展示" Param="demo" NavCmd="{Binding NavigateCommand}"
+                                     Active="{Binding ActiveNav, Converter={StaticResource EqConverter}, ConverterParameter=demo}" />
+                        </StackPanel>
+
+                        <!-- 下方实时状态卡 -->
+                        <Border Grid.Row="2" Margin="12" Padding="14"
+                                Background="{StaticResource BrushBgCard}"
+                                CornerRadius="10" BorderThickness="1"
+                                BorderBrush="{StaticResource BrushBorderCard}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- CPU -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="CPU" Foreground="{StaticResource BrushTextMuted}"
+                                               FontSize="11" Width="36" VerticalAlignment="Center" />
+                                    <Rectangle Width="1" Height="12" Fill="{StaticResource BrushBorderCard}"
+                                               VerticalAlignment="Center" Margin="4,0" />
+                                    <TextBlock Text="{Binding CpuTemp, StringFormat='{}{0:F1}°C', FallbackValue='--°C'}"
+                                               FontSize="13" FontFamily="{StaticResource FontMono}"
+                                               Foreground="{Binding CpuTemp, Converter={StaticResource TempColor}, FallbackValue={StaticResource BrushTextSecondary}}" />
+                                    <TextBlock Text="{Binding CpuUsage, StringFormat=' {0:F0}%', FallbackValue=' --%'}"
+                                               FontSize="13" FontFamily="{StaticResource FontMono}"
+                                               Foreground="{StaticResource BrushTextSecondary}" />
+                                </StackPanel>
+
+                                <!-- GPU -->
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
+                                    <TextBlock Text="GPU" Foreground="{StaticResource BrushTextMuted}"
+                                               FontSize="11" Width="36" VerticalAlignment="Center" />
+                                    <Rectangle Width="1" Height="12" Fill="{StaticResource BrushBorderCard}"
+                                               VerticalAlignment="Center" Margin="4,0" />
+                                    <TextBlock Text="{Binding GpuTemp, StringFormat='{}{0:F1}°C', FallbackValue='--°C'}"
+                                               FontSize="13" FontFamily="{StaticResource FontMono}"
+                                               Foreground="{Binding GpuTemp, Converter={StaticResource TempColor}, FallbackValue={StaticResource BrushTextSecondary}}" />
+                                    <TextBlock Text="{Binding GpuUsage, StringFormat=' {0:F0}%', FallbackValue=' --%'}"
+                                               FontSize="13" FontFamily="{StaticResource FontMono}"
+                                               Foreground="{StaticResource BrushTextSecondary}" />
+                                </StackPanel>
+
+                                <!-- 风扇 -->
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
+                                    <TextBlock Text="FAN" Foreground="{StaticResource BrushTextMuted}"
+                                               FontSize="11" Width="36" VerticalAlignment="Center" />
+                                    <Rectangle Width="1" Height="12" Fill="{StaticResource BrushBorderCard}"
+                                               VerticalAlignment="Center" Margin="4,0" />
+                                    <TextBlock Text="{Binding CpuFanSpeed, StringFormat='{}{0:F0} RPM', FallbackValue='-- RPM'}"
+                                               FontSize="13" FontFamily="{StaticResource FontMono}"
+                                               Foreground="{StaticResource BrushAccentPrimary}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- ═════════════════════════════════
+                     分隔线
+                     ═════════════════════════════════ -->
+                <Border Grid.Column="1" Background="{StaticResource BrushBorderCard}" />
+
+                <!-- ═════════════════════════════════
+                     右侧内容区
+                     ═════════════════════════════════ -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 顶部栏 -->
+                    <Border Grid.Row="0" Height="56" Background="#E80D101A"
+                            BorderBrush="{StaticResource BrushBorderCard}" BorderThickness="0,0,0,1">
+                        <Grid Margin="24,0">
+                            <!-- 性能模式快捷切换按钮组 -->
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ctrl:ModeChip Label="办公" Mode="office"
+                                          Cmd="{Binding SetPerformanceModeCommand}"
+                                          ColorAccent="{StaticResource BrushTextSecondary}" />
+                                <ctrl:ModeChip Label="游戏" Mode="gaming"
+                                          Cmd="{Binding SetPerformanceModeCommand}"
+                                          ColorAccent="{StaticResource BrushAccentPrimary}" />
+                                <ctrl:ModeChip Label="狂暴" Mode="turbo"
+                                          Cmd="{Binding SetPerformanceModeCommand}"
+                                          ColorAccent="{StaticResource BrushAccentTurbo}" />
+                                <ctrl:ModeChip Label="自定义" Mode="custom"
+                                          Cmd="{Binding SetPerformanceModeCommand}"
+                                          ColorAccent="{StaticResource BrushAccentSecondary}" />
+                            </StackPanel>
+
+                            <!-- 窗口按钮 -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Button Style="{StaticResource IconButton}" Content="─"
+                                        Click="Minimize_Click" ToolTip="最小化" />
+                                <Button Style="{StaticResource IconButton}" Content="▢"
+                                        Click="Maximize_Click" ToolTip="最大化" />
+                                <Button Style="{StaticResource IconButton}" Content="✕"
+                                        Click="Close_Click" ToolTip="关闭(托盘)" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 可滚动的内容 -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ContentPresenter Content="{Binding CurrentView}" Margin="28" />
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
