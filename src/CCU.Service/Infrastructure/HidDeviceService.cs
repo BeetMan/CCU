@@ -77,7 +77,7 @@ public class HidDeviceService : IDisposable
                 {
                     _keyboardDevice = device;
                     _keyboardStream = stream;
-                    _logger.LogInformation("Opened keyboard HID device: {Product}", device.ProductName);
+                    _logger.LogInformation("Opened keyboard HID device: {Product}", device.GetFriendlyName());
                     return true;
                 }
             }

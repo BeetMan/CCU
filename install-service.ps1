@@ -39,8 +39,8 @@ $candidates = @(
     "$scriptDir\CCU.Service\CCU.Service.exe"
     "$scriptDir\..\..\publish\CCU.Service\CCU.Service.exe"
     "$InstallDir\CCU.Service\CCU.Service.exe"
-    "$scriptDir\..\src\CCU.Service\bin\Release\net8.0\win-x64\publish\CCU.Service.exe"
-    "$scriptDir\..\src\CCU.Service\bin\Release\net8.0\win-x64\CCU.Service.exe"
+    "$scriptDir\..\src\CCU.Service\bin\Release\net8.0-windows\win-x64\publish\CCU.Service.exe"
+    "$scriptDir\..\src\CCU.Service\bin\Release\net8.0-windows\win-x64\CCU.Service.exe"
 )
 
 $svcExe = $null

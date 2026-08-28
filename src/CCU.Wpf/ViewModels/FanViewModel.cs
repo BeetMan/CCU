@@ -93,7 +93,7 @@ public partial class FanViewModel : ObservableObject
     public PointCollection BuildFillPoints(ObservableCollection<FanPoint> points)
     {
         var pc = BuildCurvePoints(points);
-        const double w = 360, h = 180;
+        const double h = 180;
         // 底边两点关闭填充区域
         if (pc.Count > 0) pc.Add(new Point(pc[pc.Count - 1].X, h));
         pc.Add(new Point(0, h));

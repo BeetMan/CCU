@@ -461,7 +461,7 @@ static async Task HwProbe()
         var seen = new HashSet<string>();
         foreach (ManagementObject dev in devSearch.Get())
         {
-            var name = (dev["Name"] ?? "").ToString();
+            var name = dev["Name"]?.ToString() ?? "";
             foreach (var (pat, label) in targets)
                 if (name.Contains(pat, StringComparison.OrdinalIgnoreCase) && seen.Add(label))
                     Console.WriteLine($"  ✅ {label}: {name}");

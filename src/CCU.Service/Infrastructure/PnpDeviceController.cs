@@ -87,8 +87,8 @@ public class PnpDeviceController
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                var name = (obj["Name"] ?? obj["Caption"] ?? "").ToString();
-                var status = (obj["Status"] ?? obj["Availability"] ?? "").ToString();
+                var name = obj["Name"]?.ToString() ?? obj["Caption"]?.ToString() ?? "";
+                var status = obj["Status"]?.ToString() ?? obj["Availability"]?.ToString() ?? "";
 
                 if (name.Contains(pattern, StringComparison.OrdinalIgnoreCase))
                 {

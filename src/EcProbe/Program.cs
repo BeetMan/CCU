@@ -13,8 +13,8 @@ Console.WriteLine("║   EcProbe v4 — EC 寄存器读验证     ║");
 Console.WriteLine("╚══════════════════════════════════════╝");
 Console.WriteLine();
 
-const byte SMRW_CMD_READ = 187;   // 0xBB
-const byte SMRW_CMD_WRITE = 170;  // 0xAA
+const byte SMRW_CMD_READ = 187;   // 0xBB — 读命令 (实际使用)
+// 写命令 0xAA 见 FanControlManager.CMD_WRITE_SMART_APC_TABLE (写入未开放)
 
 try
 {

@@ -607,8 +607,8 @@ public partial class DeviceViewModel : ObservableObject
                 @"root\cimv2", "SELECT Name, Status FROM Win32_PnPEntity");
             foreach (System.Management.ManagementObject dev in searcher.Get())
             {
-                var name = (dev["Name"] ?? "").ToString();
-                var status = (dev["Status"] ?? "OK").ToString();
+                var name = dev["Name"]?.ToString() ?? "";
+                var status = dev["Status"]?.ToString() ?? "OK";
                 bool ok = status is "OK" or "";
 
                 if (name.Contains("*webcam*", StringComparison.OrdinalIgnoreCase) ||

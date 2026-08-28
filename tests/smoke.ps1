@@ -7,8 +7,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$cli = "src\CCU.Cli\bin\Debug\net8.0\CCU.Cli.exe"
-if (-not (Test-Path $cli)) { $cli = "src\CCU.Cli\bin\Release\net8.0\CCU.Cli.exe" }
+$cli = "src\CCU.Cli\bin\Debug\net8.0-windows\CCU.Cli.exe"
+if (-not (Test-Path $cli)) { $cli = "src\CCU.Cli\bin\Release\net8.0-windows\CCU.Cli.exe" }
 if (-not (Test-Path $cli)) { Write-Host "✗ 先 dotnet build CCU.Cli" -ForegroundColor Red; exit 1 }
 
 $fail = 0
