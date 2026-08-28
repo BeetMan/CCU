@@ -33,7 +33,18 @@
 ### 战略决策点（需在阶段 1 前定案）
 **D-1：控制命令走 EC 直写还是 MQTT 转发？**
 原厂 GCUService 的 MQTT（127.0.0.1:13688）协议已被 Mode Tray 完整逆向且稳定。
-建议：**读状态走 EC/WMI（快、不依赖原厂服务），写控制优先 EC 直写（已验证的地址），MQTT 作为兜底/对照通道**。灯光这类已由 MQTT 打通的继续走 MQTT。
+
+> ✅ **已定案（2026-08-28，用户确认）：全 MQTT 版本先行。**
+> 控制命令全部走 MQTT；状态从原厂配置文件只读解析；EC/WMI 降级为只读诊断研究支线，
+> IPC 路由默认拒绝所有 EC 写入。全 MQTT 版可日常替代原厂后，再回头研究 EC 底层。
+> 风扇曲线写入 (SMAPCTABLE) 等高风险操作推迟到用户明确同意后。
+>
+> **实施记录（同日）**：新增 `VendorStateReader`（配置只读解析）+ `VendorMqttControl`
+> （常驻 MQTT 连接、独立 clientId `_21` 避免与 Mode Tray `_19` 互踢）；
+> IPC 新增 SetFanBoost/SetTurboOc；SetFanTable/SetGpuMode/SetDeviceSwitch 返回"未启用"；
+> PipeServer 竞态 bug 修复 (WaitForPipeDrain) + 异常不再静默；
+> CLI status 显示真实模式状态，新增 fan-boost/oc 命令；NLog 配置简化加固。
+> 已编译通过 (0 错误 0 新警告)，**未部署未验证**（待用户给出调试窗口）。
 
 ---
 

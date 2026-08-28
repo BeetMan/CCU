@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CCU.Shared.IPC;
+using CCU.Shared.Models;
 using LibreHardwareMonitor.Hardware;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
@@ -40,9 +41,28 @@ statusCmd.SetHandler(async (json, monitor) =>
         await StreamMonitor(1000, json);
         return;
     }
-    var (ok, err) = await SendCommand(IpcMessageType.GetHardwareInfo, new { });
-    if (!ok) { OutputError(json, err); return; }
-    Output(json, new { success = true, message = "hardware info request sent" });
+    var (ok, err, resp) = await SendCommand(IpcMessageType.GetHardwareInfo, new { });
+    if (!ok || resp is null) { OutputError(json, err ?? "服务无响应"); return; }
+    var info = resp.DeserializePayload<HardwareInfo>();
+    if (info is null) { OutputError(json, "响应负载解析失败"); return; }
+    if (info.OperatingMode < 0)
+    {
+        OutputError(json, "未找到智控中心配置（MainOption.json），无法读取模式状态");
+        return;
+    }
+    Output(json, new
+    {
+        mode = info.ModeLabel,
+        operatingMode = info.OperatingMode,
+        customProfileIndex = info.CustomProfileIndex,
+        fanBoost = info.FanBoostEnabled == 1,
+        gpuOcOffset = info.TurboGpuOcOffset,
+        cpuTemp = info.CpuTemperature,
+        gpuTemp = info.GpuTemperature,
+        cpuUsage = info.CpuUsage,
+        gpuUsage = info.GpuUsage,
+        timestamp = info.Timestamp
+    });
 }, statusJson, statusMonitor);
 root.AddCommand(statusCmd);
 
@@ -58,10 +78,54 @@ modeCmd.SetHandler(async (mode, json) =>
 {
     int m = ModeToInt(mode);
     if (m < 0){ OutputError(json, $"无效模式: {mode}"); return; }
-    var (ok, err) = await SendCommand(IpcMessageType.SetPerformanceMode, new { Mode = m });
+    var (ok, err, resp) = await SendCommand(IpcMessageType.SetPerformanceMode, new { Mode = m });
     Output(json, new { success = ok, mode, modeValue = m, error = err });
 }, modeArg, modeJson);
 root.AddCommand(modeCmd);
+
+// ========================
+// fan-boost 命令 (MQTT 强冷开关)
+// ========================
+var fanBoostCmd = new Command("fan-boost", "一键强冷开关 (MQTT)");
+var fanBoostArg = new Argument<string>("state", "on | off");
+fanBoostCmd.AddArgument(fanBoostArg);
+var fanBoostJson = new Option<bool>("--json", () => false, "JSON 输出");
+fanBoostCmd.AddOption(fanBoostJson);
+fanBoostCmd.SetHandler(async (state, json) =>
+{
+    if (!state.Equals("on", StringComparison.OrdinalIgnoreCase) &&
+        !state.Equals("off", StringComparison.OrdinalIgnoreCase))
+    {
+        OutputError(json, $"参数应为 on 或 off: {state}");
+        return;
+    }
+    var enable = state.Equals("on", StringComparison.OrdinalIgnoreCase);
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetFanBoost, new { Enable = enable });
+    Output(json, new { success = ok, fanBoost = enable, error = err });
+}, fanBoostArg, fanBoostJson);
+root.AddCommand(fanBoostCmd);
+
+// ========================
+// oc 命令 (MQTT 狂暴模式 GPU 超频)
+// ========================
+var ocCmd = new Command("oc", "狂暴模式 GPU 超频 +150MHz 开关 (MQTT)");
+var ocArg = new Argument<string>("state", "on | off");
+ocCmd.AddArgument(ocArg);
+var ocJson = new Option<bool>("--json", () => false, "JSON 输出");
+ocCmd.AddOption(ocJson);
+ocCmd.SetHandler(async (state, json) =>
+{
+    if (!state.Equals("on", StringComparison.OrdinalIgnoreCase) &&
+        !state.Equals("off", StringComparison.OrdinalIgnoreCase))
+    {
+        OutputError(json, $"参数应为 on 或 off: {state}");
+        return;
+    }
+    var offset = state.Equals("on", StringComparison.OrdinalIgnoreCase) ? 150 : 0;
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetTurboOc, new { Offset = offset });
+    Output(json, new { success = ok, ocOffset = offset, error = err });
+}, ocArg, ocJson);
+root.AddCommand(ocCmd);
 
 // ========================
 // gpu 命令
@@ -75,7 +139,7 @@ gpuCmd.SetHandler(async (mode, json) =>
 {
     int m = GpuToInt(mode);
     if (m < 0){ OutputError(json, $"无效 GPU 模式: {mode}"); return; }
-    var (ok, err) = await SendCommand(IpcMessageType.SetGpuMode, new { Mode = m });
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetGpuMode, new { Mode = m });
     Output(json, new { success = ok, gpuMode = mode, error = err });
 }, gpuArg, gpuJson);
 root.AddCommand(gpuCmd);
@@ -103,7 +167,7 @@ fanCmd.SetHandler(async (sub, json, cpu, gpu) =>
     };
     if (payload == null) { OutputError(json, $"无效子命令: {sub}"); return; }
     if (payload is string err) { OutputError(json, err); return; }
-    var (ok, error) = await SendCommand(IpcMessageType.SetFanTable, payload);
+    var (ok, error, _) = await SendCommand(IpcMessageType.SetFanTable, payload);
     Output(json, new { success = ok, fanMode = sub, error });
 }, fanSub, fanJson, fanCpu, fanGpu);
 root.AddCommand(fanCmd);
@@ -124,7 +188,7 @@ deviceCmd.SetHandler(async (dev, state, json) =>
     if (dk == null) { OutputError(json, $"无效设备: {dev}"); return; }
     bool? enable = state.ToLower() switch { "on" => true, "off" => false, "toggle" => null, _ => (bool?)null };
     if (state.ToLower() is not ("on" or "off" or "toggle")) { OutputError(json, $"无效状态: {state}"); return; }
-    var (ok, err) = await SendCommand(IpcMessageType.SetDeviceSwitch, new { Device = dk, Enable = enable });
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetDeviceSwitch, new { Device = dk, Enable = enable });
     Output(json, new { success = ok, device = dk, state, error = err });
 }, devArg, stateArg, devJson);
 root.AddCommand(deviceCmd);
@@ -152,7 +216,7 @@ rgbCmd.SetHandler(async (effect, speed, bright, color, json) =>
     {
         var p = color.Split(','); if (p.Length == 3 && byte.TryParse(p[0], out var r) && byte.TryParse(p[1], out var g) && byte.TryParse(p[2], out var b)) cmd["color"] = new[] { r, g, b };
     }
-    var (ok, err) = await SendCommand(IpcMessageType.SetKeyboardEffect, cmd);
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetKeyboardEffect, cmd);
     Output(json, new { success = ok, effect, error = err });
 }, rgbEffect, rgbSpeed, rgbBright, rgbColor, rgbJson);
 root.AddCommand(rgbCmd);
@@ -171,7 +235,7 @@ displayCmd.SetHandler(async (profile, brightness, json) =>
 {
     int pv = DisplayToInt(profile);
     if (pv < 0) { OutputError(json, $"无效显示预设: {profile}"); return; }
-    var (ok, err) = await SendCommand(IpcMessageType.SetDisplaySettings, new { ColorProfile = pv, Brightness = brightness });
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetDisplaySettings, new { ColorProfile = pv, Brightness = brightness });
     Output(json, new { success = ok, profile, error = err });
 }, displayProfile, displayBright, displayJson);
 root.AddCommand(displayCmd);
@@ -201,7 +265,7 @@ invokeCmd.SetHandler(async (type, payload) =>
     if (payload == "-") payload = await Console.In.ReadToEndAsync();
     if (!Enum.TryParse<IpcMessageType>(type, true, out var t)) { Console.WriteLine($"{{\"error\":\"未知类型: {type}\"}}"); return; }
     object p; try { p = JsonSerializer.Deserialize<object>(payload) ?? new { }; } catch { Console.WriteLine($"{{\"error\":\"无效 JSON\"}}"); return; }
-    var (ok, err) = await SendCommand(t, p);
+    var (ok, err, _) = await SendCommand(t, p);
     Console.WriteLine(JsonSerializer.Serialize(new { success = ok, type, error = err }, jsonOpts));
 }, invokeType, invokePayload);
 root.AddCommand(invokeCmd);
@@ -252,23 +316,23 @@ static void OutputError(bool json, string msg)
     else Console.Error.WriteLine($"错误: {msg}");
 }
 
-static async Task<(bool success, string? error)> SendCommand(IpcMessageType type, object payload)
+static async Task<(bool success, string? error, IpcMessage? response)> SendCommand(IpcMessageType type, object payload)
 {
     try
     {
         using var client = new PipeClient("CCU.Service.Pipe");
-        if (!await client.ConnectAsync(3000)) return (false, "无法连接到 CCU 服务");
+        if (!await client.ConnectAsync(3000)) return (false, "无法连接到 CCU 服务", null);
         var msg = IpcMessage.Create(type, payload);
         var resp = await client.SendAsync(msg);
-        if (resp == null) return (false, "服务无响应");
+        if (resp == null) return (false, "服务无响应", null);
         if (resp.Type == IpcMessageType.Error)
         {
             var err = resp.DeserializePayload<ErrorPayload>();
-            return (false, err?.Message ?? "未知错误");
+            return (false, err?.Message ?? "未知错误", resp);
         }
-        return (true, null);
+        return (true, null, resp);
     }
-    catch (Exception ex) { return (false, ex.Message); }
+    catch (Exception ex) { return (false, ex.Message, null); }
 }
 
 static async Task StreamMonitor(int intervalMs, bool raw)

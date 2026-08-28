@@ -102,6 +102,14 @@ public class HardwareInfo
     public float GpuMemFrequency { get; set; }
     public float BatteryLevel { get; set; }
     public float MemoryUsage { get; set; }
+
+    // === 原厂模式状态 (从智控中心配置文件只读解析, -1 = 未知) ===
+    public int OperatingMode { get; set; } = -1;
+    public int CustomProfileIndex { get; set; } = -1;
+    public int TurboGpuOcOffset { get; set; }
+    public int FanBoostEnabled { get; set; }
+    public string ModeLabel { get; set; } = "";
+
     public DateTime Timestamp { get; set; }
 }
 

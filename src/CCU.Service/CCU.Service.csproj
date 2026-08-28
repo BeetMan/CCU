@@ -17,4 +17,11 @@
   <ItemGroup>
     <ProjectReference Include="..\CCU.Shared\CCU.Shared.csproj" />
   </ItemGroup>
+
+  <!-- 厂商派生 DLL，不入库，构建机需自行提供（同 ModeTray 政策） -->
+  <ItemGroup>
+    <Reference Include="M2Mqtt.Net">
+      <HintPath>..\MqttProbe\M2Mqtt.Net.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

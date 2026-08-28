@@ -13,11 +13,13 @@ public class PipeServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Func<IpcMessage, Task<IpcMessage>> _messageHandler;
     private readonly Thread _listenThread;
+    private readonly Action<string>? _log;
 
-    public PipeServer(string pipeName, Func<IpcMessage, Task<IpcMessage>> messageHandler)
+    public PipeServer(string pipeName, Func<IpcMessage, Task<IpcMessage>> messageHandler, Action<string>? log = null)
     {
         _pipeName = pipeName;
         _messageHandler = messageHandler;
+        _log = log;
         _listenThread = new Thread(ListenLoop) { IsBackground = true, Name = "PipeServer" };
     }
 
@@ -50,7 +52,7 @@ public class PipeServer : IDisposable
             catch (Exception ex)
             {
                 if (!_cts.IsCancellationRequested)
-                    System.Diagnostics.Debug.WriteLine($"PipeServer error: {ex.Message}");
+                    _log?.Invoke($"PipeServer error: {ex.Message}");
             }
         }
     }
@@ -75,21 +77,55 @@ public class PipeServer : IDisposable
             }
 
             string json = Encoding.UTF8.GetString(msgBuf, 0, totalRead);
-            var message = JsonSerializer.Deserialize<IpcMessage>(json);
+            IpcMessage? message;
+            try
+            {
+                message = JsonSerializer.Deserialize<IpcMessage>(json);
+            }
+            catch (JsonException ex)
+            {
+                _log?.Invoke($"PipeServer: bad message json ({ex.Message}), msgLen={msgLen}");
+                return;
+            }
             if (message == null) return;
 
             // 处理
-            var response = _messageHandler(message).GetAwaiter().GetResult();
+            IpcMessage response;
+            try
+            {
+                response = _messageHandler(message).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // 处理器异常不再静默吞掉 — 返回 Error 消息并记录
+                _log?.Invoke($"PipeServer: handler threw for {message.Type}: {ex}");
+                response = IpcMessage.Create(IpcMessageType.Error, new { Message = ex.Message });
+            }
+
             var respJson = JsonSerializer.Serialize(response);
             byte[] respBytes = Encoding.UTF8.GetBytes(respJson);
 
-            // 写响应 — 长度前缀
-            byte[] respLen = BitConverter.GetBytes(respBytes.Length);
-            stream.Write(respLen, 0, 4);
-            stream.Write(respBytes, 0, respBytes.Length);
-            stream.Flush();
+            // 写响应 — 长度前缀 + 正文，然后等客户端把数据读走再断开。
+            // 修复：之前写完立即由外层 Disconnect()，Windows 内核会丢弃客户端
+            // 尚未读走的缓冲数据，导致小响应 (Ack/HardwareInfo) 必然丢失，
+            // 只有大响应 (如 EC 诊断 12KB) 因写入耗时长而侥幸存活。
+            try
+            {
+                byte[] respLen = BitConverter.GetBytes(respBytes.Length);
+                stream.Write(respLen, 0, 4);
+                stream.Write(respBytes, 0, respBytes.Length);
+                stream.Flush();
+                stream.WaitForPipeDrain();
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"PipeServer: write/drain failed: {ex.Message}");
+            }
         }
-        catch { /* connection lost */ }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"PipeServer: connection aborted: {ex.Message}");
+        }
     }
 
     public void Stop() => _cts.Cancel();

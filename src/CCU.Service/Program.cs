@@ -22,9 +22,8 @@ Console.WriteLine($"  IsSystem: {isSystem}, IsAdmin: {isAdmin}");
 
 if (!isSystem)
 {
-    Console.WriteLine("⚠️ 当前不是 SYSTEM 账户 — EC 写入可能被 WMI 拒绝");
-    Console.WriteLine("   安装为 Windows Service 后将以 LocalSystem 运行");
-    Console.WriteLine("   命令: sc.exe create CCUService binPath= \"...\" obj= LocalSystem start= auto");
+    Console.WriteLine("ℹ️ MQTT 优先架构下非 SYSTEM 也可运行（控制走 MQTT，状态读配置文件）。");
+    Console.WriteLine("   仅 EC 诊断/研究支线需要 LocalSystem；当前硬件监控可能受限。");
 }
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -52,6 +51,11 @@ builder.Services.AddSingleton<UefiVariableService>();
 builder.Services.AddSingleton<HidDeviceService>();
 builder.Services.AddSingleton<HardwareMonitorService>();
 
+// MQTT 优先架构核心
+builder.Services.AddSingleton<VendorStateReader>();
+builder.Services.AddSingleton<VendorMqttControl>();
+
+// EC 研究支线（写入默认未被 IPC 路由启用）
 builder.Services.AddSingleton<PerformanceManager>();
 builder.Services.AddSingleton<FanControlManager>();
 builder.Services.AddSingleton<GpuManager>();

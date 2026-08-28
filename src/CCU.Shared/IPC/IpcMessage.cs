@@ -14,6 +14,8 @@ public enum IpcMessageType
     SetDisplaySettings,
     SetKeyboardEffect,
     SetDeviceSwitch,
+    SetFanBoost,      // MQTT: FAN_BOOST_ON / FAN_BOOST_OFF
+    SetTurboOc,       // MQTT: SET_OPERATING_MODE_DETAIL GpuCoreClockOffsetOC
     SaveAppProfile,
     DeleteAppProfile,
     StartOtaCheck,
