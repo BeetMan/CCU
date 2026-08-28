@@ -92,5 +92,13 @@ public class HardwareInfoDto
     public double GpuMemFrequency { get; set; }
     public double BatteryLevel { get; set; }
     public double MemoryUsage { get; set; }
+
+    // 模式状态 (MQTT-first 服务提供)
+    public int OperatingMode { get; set; } = -1;
+    public int CustomProfileIndex { get; set; } = -1;
+    public int TurboGpuOcOffset { get; set; }
+    public int FanBoostEnabled { get; set; }
+    public string ModeLabel { get; set; } = "";
+
     public string? Timestamp { get; set; }
 }

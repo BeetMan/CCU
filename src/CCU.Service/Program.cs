@@ -54,6 +54,7 @@ builder.Services.AddSingleton<HardwareMonitorService>();
 // MQTT 优先架构核心
 builder.Services.AddSingleton<VendorStateReader>();
 builder.Services.AddSingleton<VendorMqttControl>();
+builder.Services.AddSingleton<AppProfileStore>();
 
 // EC 研究支线（写入默认未被 IPC 路由启用）
 builder.Services.AddSingleton<PerformanceManager>();

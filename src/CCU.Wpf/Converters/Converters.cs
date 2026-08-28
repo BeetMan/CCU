@@ -140,3 +140,14 @@ public class MultiParamConverter : MarkupExtension, IValueConverter
         => value is true ? parameter : Binding.DoNothing;
     public override object ProvideValue(IServiceProvider sp) => this;
 }
+
+/// <summary>
+/// GPU OC 开关按钮参数：当前偏移 >0 返回 "off"（点击则关闭），否则 "on"
+/// </summary>
+public class OcToggleConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is int offset && offset > 0 ? "off" : "on";
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => Binding.DoNothing;
+}

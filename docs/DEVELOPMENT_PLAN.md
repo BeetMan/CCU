@@ -45,6 +45,17 @@
 > PipeServer 竞态 bug 修复 (WaitForPipeDrain) + 异常不再静默；
 > CLI status 显示真实模式状态，新增 fan-boost/oc 命令；NLog 配置简化加固。
 > 已编译通过 (0 错误 0 新警告)，**未部署未验证**（待用户给出调试窗口）。
+>
+> **功能开发记录（同日，第二抨）**：
+> - **应用绑定自动切换 (2.2)**：`ForegroundAppMonitor`（前台进程轮询）+
+>   `AppProfileStore`（app-profiles.json 持久化）+ 主循环状态机
+>   （3s 冷却防抖、仅进不重复写、离开恢复办公模式可配）；
+>   IPC 新增 GetModeCatalog/SetAppBindingEnabled，SaveAppProfile/DeleteAppProfile 接通；
+> - **WPF 对齐**：状态栏显示真实模式标签；性能页新增狂暴静技/极速细分芯片、
+>   自定义 Profile 芯片（服务目录发现）、强冷/OC 快捷开关；
+>   设置页新增应用绑定管理（列表/添加/删除/总开关）；
+> - 新增 `tests/smoke.ps1` 冒烟脚本（只读默认，-WithModeSwitch 可选）。
+> 编译 0 错误 0 新警告，未部署。
 
 ---
 

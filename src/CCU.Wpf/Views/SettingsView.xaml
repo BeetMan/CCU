@@ -42,6 +42,72 @@
             </Grid>
         </Border>
 
+        <!-- 应用绑定自动切换 -->
+        <TextBlock Text="应用绑定自动切换" Style="{StaticResource SectionHeader}" />
+        <Border Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,0,8">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="启用功能" FontWeight="SemiBold" Foreground="{StaticResource BrushTextPrimary}" />
+                    <TextBlock Text="游戏等绑定应用获得焦点时自动切换性能模式，离开后恢复办公模式" FontSize="12"
+                               Foreground="{StaticResource BrushTextSecondary}" />
+                </StackPanel>
+                <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AppBindingEnabled, Mode=TwoWay}"
+                          Command="{Binding ToggleAppBindingCommand}"
+                          HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="绑定规则" FontWeight="SemiBold" Foreground="{StaticResource BrushTextPrimary}" Margin="0,0,0,8" />
+                <ItemsControl ItemsSource="{Binding AppProfiles}" Margin="0,0,0,10">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushTextPrimary}" />
+                                    <TextBlock Text="{Binding ModeName, StringFormat= → {0}}" Margin="8,0,0,0"
+                                               Foreground="{StaticResource BrushAccentPrimary}" />
+                                    <TextBlock Text="{Binding Process, StringFormat=  ({0})}" FontSize="11"
+                                               Foreground="{StaticResource BrushTextMuted}" />
+                                </StackPanel>
+                                <Button Content="删除" HorizontalAlignment="Right" Cursor="Hand"
+                                        Command="{Binding DataContext.DeleteBindingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding Process}"
+                                        Background="#22EF4444" Foreground="#FFF87171" BorderThickness="0"
+                                        Padding="10,2" FontSize="12" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding NewProcess, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="13" Padding="8,6" VerticalAlignment="Center"
+                             Background="{StaticResource BrushBgTertiary}" Foreground="{StaticResource BrushTextPrimary}"
+                             BorderBrush="{StaticResource BrushBorderCard}" CaretBrush="{StaticResource BrushTextPrimary}"
+                             ToolTip="进程名，如 cyberpunk2077.exe 或 steam.exe" />
+                    <ComboBox Grid.Column="1" SelectedIndex="{Binding NewMode}" Width="110" Margin="8,0,0,0"
+                              Background="{StaticResource BrushBgTertiary}"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              BorderBrush="{StaticResource BrushBorderCard}">
+                        <ComboBoxItem Content="办公模式" />
+                        <ComboBoxItem Content="游戏模式" IsSelected="True" />
+                        <ComboBoxItem Content="狂暴·极速" />
+                        <ComboBoxItem Content="狂暴·静技" />
+                    </ComboBox>
+                    <Button Grid.Column="2" Content="添加" Margin="8,0,0,0" Padding="18,6" Cursor="Hand"
+                            Command="{Binding AddBindingCommand}"
+                            Background="#2200D4AA" Foreground="{StaticResource BrushAccentPrimary}"
+                            BorderBrush="{StaticResource BrushAccentPrimary}" BorderThickness="1" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
         <!-- 语言 / 主题 -->
         <TextBlock Text="界面" Style="{StaticResource SectionHeader}" />
         <Border Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,0,8">

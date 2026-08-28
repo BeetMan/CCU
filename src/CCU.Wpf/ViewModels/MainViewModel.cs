@@ -26,19 +26,28 @@ public partial class MainViewModel : ObservableObject
 
         // 初始化导航
         NavigateCommand = new RelayCommand<string>(Navigate);
+        var perfVm = new PerformanceViewModel();
         _views = new Dictionary<string, object>
         {
-            ["performance"] = new Views.PerformanceView { DataContext = new PerformanceViewModel() },
+            ["performance"] = new Views.PerformanceView { DataContext = perfVm },
             ["gpu"] = new Views.GpuView { DataContext = new GpuViewModel() },
             ["fan"] = new Views.FanView { DataContext = new FanViewModel() },
             ["keyboard"] = new Views.KeyboardView { DataContext = new KeyboardViewModel() },
             ["display"] = new Views.DisplayView { DataContext = new DisplayViewModel() },
             ["devices"] = new Views.DeviceView { DataContext = new DeviceViewModel() },
-            ["settings"] = new Views.SettingsView { DataContext = new SettingsViewModel() },
             ["demo"] = new Views.DemoView { DataContext = new DemoViewModel() }
         };
         CurrentView = _views["performance"];
+
+        // 异步拉取自定义 Profile 目录
+        _ = perfVm.LoadCatalogAsync(_ipc);
+
+        // 设置页：应用绑定管理
+        _settingsViewModel = new SettingsViewModel(_ipc);
+        _views["settings"] = new Views.SettingsView { DataContext = _settingsViewModel };
     }
+
+    private readonly SettingsViewModel _settingsViewModel;
 
     // ========================
     // 硬件信息
@@ -59,6 +68,9 @@ public partial class MainViewModel : ObservableObject
     // 当前激活的性能模式 (0=office, 1=gaming, 2=turbo, 3=custom)
     // ========================
     [ObservableProperty] private int _activePerformanceMode;
+    [ObservableProperty] private string _modeLabel = "--";
+    [ObservableProperty] private bool _fanBoostOn;
+    [ObservableProperty] private int _gpuOcOffset;
 
     // ========================
     // 导航
@@ -88,12 +100,46 @@ public partial class MainViewModel : ObservableObject
             _ => ActiveNav
         };
 
-        // 立即更新 UI，不等 IPC 返回
-        ActivePerformanceMode = ModeToInt(mode);
-        App.NotifyModeChanged(ModeToInt(mode));
+        var request = ModeToPayload(mode);
+        ActivePerformanceMode = (int)(request.GetType().GetProperty("Mode")?.GetValue(request) ?? 0);
+        App.NotifyModeChanged(ActivePerformanceMode);
 
         // IPC 异步发送，不阻塞 UI
-        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode, new { Mode = ModeToInt(mode) });
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode, request);
+    }
+
+    [RelayCommand]
+    private void SetTurboDetail(string detail)
+    {
+        var silent = detail == "silent";
+        ActivePerformanceMode = 2;
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode,
+            new { Mode = 2, Silent = (int?)(silent ? 1 : 0), Extreme = (int?)(silent ? 0 : 1) });
+    }
+
+    [RelayCommand]
+    private void SetCustomProfile(string slot)
+    {
+        if (!int.TryParse(slot, out var slotNumber) || slotNumber < 1) return;
+        ActivePerformanceMode = 3;
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode,
+            new { Mode = 3, ProfileIndex = slotNumber - 1 });
+    }
+
+    [RelayCommand]
+    private void ToggleFanBoost()
+    {
+        var target = !FanBoostOn;
+        FanBoostOn = target; // 乐观更新，轮询会纠正
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetFanBoost, new { Enable = target });
+    }
+
+    [RelayCommand]
+    private void SetTurboOc(string state)
+    {
+        var offset = state == "on" ? 150 : 0;
+        GpuOcOffset = offset;
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetTurboOc, new { Offset = offset });
     }
 
     [RelayCommand]
@@ -120,6 +166,23 @@ public partial class MainViewModel : ObservableObject
             CpuFreq = info.CpuFrequency;
             MemoryUsage = info.MemoryUsage;
             BatteryLevel = info.BatteryLevel;
+
+            // 真实模式状态以服务轮询结果为准（乐观更新后由它纠正）
+            if (info.OperatingMode >= 0)
+            {
+                ActivePerformanceMode = info.OperatingMode;
+                ModeLabel = string.IsNullOrWhiteSpace(info.ModeLabel) ? "--" : info.ModeLabel;
+            }
+            FanBoostOn = info.FanBoostEnabled == 1;
+            GpuOcOffset = info.TurboGpuOcOffset;
+
+            // 同步到性能页 ViewModel
+            if (CurrentView is Views.PerformanceView pv && pv.DataContext is PerformanceViewModel perfVm)
+            {
+                perfVm.ActiveMode = ActivePerformanceMode;
+                perfVm.FanBoostOn = FanBoostOn;
+                perfVm.GpuOcOffset = GpuOcOffset;
+            }
         }
         catch (Exception ex)
         {
@@ -130,6 +193,25 @@ public partial class MainViewModel : ObservableObject
 
     private static int ModeToInt(string m) => m.ToLower() switch
     { "office" => 0, "gaming" => 1, "turbo" => 2, "custom" => 3, _ => 0 };
+
+    private static object ModeToPayload(string mode)
+    {
+        var value = mode.ToLowerInvariant();
+        if (value.StartsWith("custom:"))
+        {
+            var slot = int.TryParse(value[7..], out var s) ? Math.Max(0, s - 1) : 0;
+            return new { Mode = 3, ProfileIndex = (int?)slot };
+        }
+        return value switch
+        {
+            "office" => (object)new { Mode = 0 },
+            "gaming" => new { Mode = 1 },
+            "turbo:silent" => new { Mode = 2, Silent = (int?)1, Extreme = (int?)0 },
+            "turbo" or "turbo:extreme" => new { Mode = 2, Silent = (int?)0, Extreme = (int?)1 },
+            "custom" => new { Mode = 3, ProfileIndex = (int?)0 },
+            _ => new { Mode = 0 }
+        };
+    }
 }
 
 // ==============================================
@@ -138,9 +220,44 @@ public partial class MainViewModel : ObservableObject
 public partial class PerformanceViewModel : ObservableObject
 {
     [ObservableProperty] private int _activeMode;
+    [ObservableProperty] private bool _fanBoostOn;
+    [ObservableProperty] private int _gpuOcOffset;
 
-    [RelayCommand]
-    private async Task SetMode(int mode) => ActiveMode = mode;
+    /// <summary>已启用的自定义 Profile 芯片（服务目录发现）</summary>
+    public ObservableCollection<CustomProfileChip> CustomProfiles { get; } = [];
+
+    [RelayCommand] private async Task SetMode(int mode) => ActiveMode = mode;
+
+    /// <summary>从服务拉取自定义 Profile 目录（不阻塞 UI）</summary>
+    public async Task LoadCatalogAsync(Services.CcuIpcService ipc)
+    {
+        var resp = await ipc.SendAsync<ModeCatalogDto>(IpcMessageType.GetModeCatalog, new { });
+        if (resp?.Catalog == null) return;
+        CustomProfiles.Clear();
+        foreach (var m in resp.Catalog.Where(c => c.OperatingMode == 3)
+                     .OrderBy(c => c.ProfileIndex))
+        {
+            CustomProfiles.Add(new CustomProfileChip(m.Label, (m.ProfileIndex ?? 0) + 1));
+        }
+    }
+}
+
+public sealed record CustomProfileChip(string Label, int Slot);
+
+public sealed class ModeCatalogEntry
+{
+    public string Label { get; set; } = "";
+    public string Action { get; set; } = "";
+    public int OperatingMode { get; set; }
+    public int? ProfileIndex { get; set; }
+    public int? Silent { get; set; }
+    public int? Extreme { get; set; }
+}
+
+public sealed class ModeCatalogDto
+{
+    public bool Success { get; set; }
+    public List<ModeCatalogEntry>? Catalog { get; set; }
 }
 
 // ==============================================
@@ -303,9 +420,105 @@ public partial class DeviceViewModel : ObservableObject
 // ==============================================
 public partial class SettingsViewModel : ObservableObject
 {
+    private readonly CcuIpcService _ipc;
+
+    public SettingsViewModel(CcuIpcService ipc)
+    {
+        _ipc = ipc;
+        _ = LoadAppBindingsAsync();
+    }
+
     [ObservableProperty] private bool _autoStart = true;
     [ObservableProperty] private bool _minimizeToTray = true;
     [ObservableProperty] private bool _osdEnabled = true;
     [ObservableProperty] private string _language = "zh-cn";
     [ObservableProperty] private string _theme = "dark";
+
+    // === 应用绑定自动切换 ===
+    [ObservableProperty] private bool _appBindingEnabled;
+    [ObservableProperty] private bool _restoreOnLeave = true;
+    [ObservableProperty] private string _newProcess = "";
+    [ObservableProperty] private int _newMode = 1;
+    public ObservableCollection<AppProfileRow> AppProfiles { get; } = [];
+
+    public static readonly (string Name, int Mode)[] ModeOptions =
+    { ("办公", 0), ("游戏", 1), ("狂暴·极速", 2), ("狂暴·静技", 2) };
+
+    /// <summary>新增绑定（进程名 + 模式）</summary>
+    [RelayCommand]
+    private async Task AddBinding()
+    {
+        var process = NewProcess.Trim();
+        if (process.Length == 0) return;
+        if (!process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) process += ".exe";
+
+        var (mode, silent, extreme) = NewMode switch
+        {
+            0 => (0, (int?)null, (int?)null),
+            1 => (1, null, null),
+            2 => (2, (int?)0, (int?)1),
+            3 => (2, (int?)1, (int?)0),
+            _ => (1, null, null)
+        };
+
+        await _ipc.SendCommandAsync(IpcMessageType.SaveAppProfile,
+            new { Process = process, Mode = mode, Silent = silent, Extreme = extreme, Label = "" });
+        NewProcess = "";
+        await LoadAppBindingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task DeleteBinding(string process)
+    {
+        await _ipc.SendCommandAsync(IpcMessageType.DeleteAppProfile, new { Process = process, Mode = 0 });
+        await LoadAppBindingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task ToggleAppBinding()
+    {
+        await _ipc.SendCommandAsync(IpcMessageType.SetAppBindingEnabled,
+            new { Enabled = AppBindingEnabled });
+    }
+
+    private async Task LoadAppBindingsAsync()
+    {
+        var resp = await _ipc.SendAsync<AppBindingDto>(IpcMessageType.GetModeCatalog, new { });
+        if (resp?.AppBinding == null) return;
+        AppBindingEnabled = resp.AppBinding.Enabled;
+        RestoreOnLeave = resp.AppBinding.RestoreOnLeave;
+        AppProfiles.Clear();
+        foreach (var p in resp.AppBinding.Profiles)
+        {
+            AppProfiles.Add(new AppProfileRow(p.Process, p.DisplayName,
+                p.Mode switch { 0 => "办公", 1 => "游戏", 2 => p.Silent == 1 ? "狂暴·静技" : "狂暴·极速", 3 => $"自定义#{(p.ProfileIndex ?? 0) + 1}", _ => "?" }));
+        }
+    }
 }
+
+public sealed class AppProfileDto
+{
+    public string Process { get; set; } = "";
+    public int Mode { get; set; }
+    public int? ProfileIndex { get; set; }
+    public int? Silent { get; set; }
+    public int? Extreme { get; set; }
+    public string Label { get; set; } = "";
+    public string DisplayName => string.IsNullOrWhiteSpace(Label) ? Process : Label;
+}
+
+public sealed class AppBindingDto
+{
+    public bool Success { get; set; }
+    public List<ModeCatalogEntry>? Catalog { get; set; }
+    public AppBindingStateDto? AppBinding { get; set; }
+}
+
+public sealed class AppBindingStateDto
+{
+    public bool Enabled { get; set; }
+    public bool RestoreOnLeave { get; set; }
+    public List<AppProfileDto> Profiles { get; set; } = [];
+}
+
+public sealed record AppProfileRow(string Process, string DisplayName, string ModeName);

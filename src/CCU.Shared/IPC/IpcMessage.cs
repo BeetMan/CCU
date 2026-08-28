@@ -16,6 +16,8 @@ public enum IpcMessageType
     SetDeviceSwitch,
     SetFanBoost,      // MQTT: FAN_BOOST_ON / FAN_BOOST_OFF
     SetTurboOc,       // MQTT: SET_OPERATING_MODE_DETAIL GpuCoreClockOffsetOC
+    GetModeCatalog,   // 返回当前可用模式目录（含自定义 Profile）
+    SetAppBindingEnabled, // 应用绑定自动切换总开关
     SaveAppProfile,
     DeleteAppProfile,
     StartOtaCheck,

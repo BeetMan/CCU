@@ -6,6 +6,7 @@
     <UserControl.Resources>
         <conv:TemperatureToColorConverter x:Key="TempColor" />
         <conv:MultiParamConverter x:Key="IsMode" />
+        <conv:OcToggleConverter x:Key="OcToggleParam" />
     </UserControl.Resources>
 
     <StackPanel>
@@ -134,6 +135,108 @@
                                 <Setter TargetName="card" Property="Background" Value="#220EA5E9" />
                                 <Setter TargetName="card" Property="BorderThickness" Value="2" />
                             </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </Grid>
+
+        <!-- 当前模式指示 + 狂暴细分 + 自定义 Profile -->
+        <Grid Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Padding="12,6" CornerRadius="8" Background="#2200D4AA" VerticalAlignment="Center">
+                <TextBlock Text="{Binding DataContext.ModeLabel, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=--}"
+                           FontWeight="SemiBold" Foreground="{StaticResource BrushAccentPrimary}" />
+            </Border>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                <!-- 狂暴细分（仅狂暴模式有效） -->
+                <Button Margin="4,0,0,0" Padding="14,6" Cursor="Hand"
+                        Command="{Binding DataContext.SetTurboDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="silent"
+                        Content="狂暴 · 静技" />
+                <Button Margin="4,0,0,0" Padding="14,6" Cursor="Hand"
+                        Command="{Binding DataContext.SetTurboDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="extreme"
+                        Content="狂暴 · 极速" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 自定义 Profile 芯片 -->
+        <ItemsControl ItemsSource="{Binding CustomProfiles}" Margin="0,10,0,0">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Margin="0,0,8,0" Padding="14,6" Cursor="Hand"
+                            Command="{Binding DataContext.SetCustomProfileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding Slot}">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Name="chip" Padding="{TemplateBinding Padding}" CornerRadius="16"
+                                        Background="#1A0EA5E9" BorderBrush="#330EA5E9" BorderThickness="1">
+                                    <TextBlock Text="{Binding Label}" Foreground="#FF0EA5E9" FontWeight="SemiBold" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="chip" Property="Background" Value="#330EA5E9" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 强冷 / GPU OC 快捷开关 -->
+        <Grid Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Margin="0,0,6,0" Padding="16,10" Cursor="Hand"
+                    Command="{Binding DataContext.ToggleFanBoostCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Name="boost" Padding="{TemplateBinding Padding}" CornerRadius="10"
+                                Background="#1AF97316" BorderBrush="#33F97316" BorderThickness="1.5">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="❄" FontSize="16" VerticalAlignment="Center" />
+                                <TextBlock Text="一键强冷" Margin="8,0,0,0" FontWeight="SemiBold"
+                                           Foreground="#FFF97316" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding DataContext.FanBoostOn, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='  {0}', FallbackValue=''}"
+                                           Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="boost" Property="Background" Value="#2AF97316" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+            <Button Grid.Column="1" Margin="6,0,0,0" Padding="16,10" Cursor="Hand"
+                    Command="{Binding DataContext.SetTurboOcCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding DataContext.GpuOcOffset, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource OcToggleParam}}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Name="oc" Padding="{TemplateBinding Padding}" CornerRadius="10"
+                                Background="#1A00D4AA" BorderBrush="#3300D4AA" BorderThickness="1.5">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⚡" FontSize="16" VerticalAlignment="Center" />
+                                <TextBlock Text="GPU OC +150 MHz (仅狂暴)" Margin="8,0,0,0" FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushAccentPrimary}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding DataContext.GpuOcOffset, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='  +{0} MHz', FallbackValue=''}"
+                                           Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="oc" Property="Background" Value="#2A00D4AA" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Button.Template>
