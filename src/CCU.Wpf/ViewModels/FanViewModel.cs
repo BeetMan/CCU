@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CCU.Shared.IPC;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Media;
@@ -10,6 +11,38 @@ public partial class FanViewModel : ObservableObject
 {
     [ObservableProperty] private int _fanMode;
     [ObservableProperty] private bool _independentControl;
+    [ObservableProperty] private string _curveSource = "默认曲线 (尚未从服务读取)";
+    [ObservableProperty] private string _cpuRpm = "--";
+    [ObservableProperty] private string _gpuRpm = "--";
+
+    /// <summary>从服务只读读取当前风扇曲线 (SMAPCTABLE)。失败时保留默认曲线。</summary>
+    public async Task LoadCurveAsync(Services.CcuIpcService ipc)
+    {
+        try
+        {
+            var resp = await ipc.SendAsync<FanCurveDto>(IpcMessageType.GetFanCurve, new { });
+            if (resp?.CpuCurve is not { Count: > 0 })
+            {
+                CurveSource = "服务未返回曲线 (SMAPCTABLE 读取未验证) — 显示默认";
+                return;
+            }
+
+            CpuCurve.Clear();
+            foreach (var p in resp.CpuCurve)
+                CpuCurve.Add(new FanPoint(p.UpTemperature, p.Duty));
+            if (resp.GpuCurve is { Count: > 0 })
+            {
+                GpuCurve.Clear();
+                foreach (var p in resp.GpuCurve)
+                    GpuCurve.Add(new FanPoint(p.UpTemperature, p.Duty));
+            }
+            CurveSource = "已从服务读取当前曲线 (只读)";
+        }
+        catch (Exception ex)
+        {
+            CurveSource = $"曲线读取失败: {ex.Message}";
+        }
+    }
 
     // 用 ObservableObject 的 FanPoint 代替 WPF DependencyObject
     [ObservableProperty] private ObservableCollection<FanPoint> _cpuCurve = new(CreateDefaultCurve());
@@ -92,4 +125,19 @@ public partial class FanPoint : ObservableObject
 
     partial void OnTemperatureChanged(int value) { OnPropertyChanged(nameof(CanvasX)); }
     partial void OnDutyChanged(int value) { OnPropertyChanged(nameof(CanvasY)); }
+}
+
+// 风扇曲线 DTO — 对应服务端 FanCurvePoint
+public sealed class FanCurvePointDto
+{
+    public int UpTemperature { get; set; }
+    public int DownTemperature { get; set; }
+    public int Duty { get; set; }
+}
+
+public sealed class FanCurveDto
+{
+    public bool Success { get; set; }
+    public List<FanCurvePointDto>? CpuCurve { get; set; }
+    public List<FanCurvePointDto>? GpuCurve { get; set; }
 }

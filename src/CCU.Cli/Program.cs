@@ -196,12 +196,12 @@ root.AddCommand(deviceCmd);
 // ========================
 // rgb 命令
 // ========================
-var rgbCmd = new Command("rgb", "键盘 RGB 灯效");
-var rgbEffect = new Argument<string>("effect", "off|static|breathing|wave|rainbow|reactive|ripple|raindrop|neon|marquee|aurora|music|gaming|spark|flash|mix");
+var rgbCmd = new Command("rgb", "键盘 RGB 灯效 (原厂 MQTT 协议)");
+var rgbEffect = new Argument<string>("effect", "off|single|breathing|wave|colorfulwave|reactive|rainbow|ripple|raindrop|marquee|impact|spark|aurora|music|gaming|flash|mix|twinkling|dawn|sine|interlace|diagonal");
 rgbCmd.AddArgument(rgbEffect);
-var rgbSpeed = new Option<int>("--speed", () => 5, "速度 (1-10)");
+var rgbSpeed = new Option<int>("--speed", () => 2, "速度 (1-5)");
 rgbCmd.AddOption(rgbSpeed);
-var rgbBright = new Option<int>("--bright", () => 3, "亮度 (0-4)");
+var rgbBright = new Option<int>("--bright", () => 4, "亮度 (0-4, 原厂 25% 步进)");
 rgbCmd.AddOption(rgbBright);
 var rgbColor = new Option<string?>("--color", () => null, "颜色 R,G,B");
 rgbCmd.AddOption(rgbColor);
@@ -209,35 +209,57 @@ var rgbJson = new Option<bool>("--json", () => false, "JSON 输出");
 rgbCmd.AddOption(rgbJson);
 rgbCmd.SetHandler(async (effect, speed, bright, color, json) =>
 {
-    int ev = RgbToInt(effect);
-    if (ev < 0) { OutputError(json, $"无效灯效: {effect}"); return; }
-    var cmd = new Dictionary<string, object> { ["effect"] = ev, ["speed"] = speed, ["brightness"] = bright };
+    var vendorEffect = effect.ToLowerInvariant() switch
+    {
+        "static" => "Single",
+        "neon" => "Twinkling",
+        var e => string.Concat(e[0].ToString().ToUpper(), e[1..])
+    };
+    if (vendorEffect != "" && !new[] { "Single", "Breathing", "Wave", "ColorfulWave", "Reactive", "Rainbow", "Ripple", "Raindrop", "Marquee", "Impact", "Spark", "Aurora", "Music", "Gaming", "Flash", "Mix", "Twinkling", "Dawn", "Sine", "Interlace", "Diagonal" }.Contains(vendorEffect))
+    { OutputError(json, $"无效灯效: {effect}"); return; }
+
+    byte r = 0, g = 212, b = 170;
     if (!string.IsNullOrEmpty(color))
     {
-        var p = color.Split(','); if (p.Length == 3 && byte.TryParse(p[0], out var r) && byte.TryParse(p[1], out var g) && byte.TryParse(p[2], out var b)) cmd["color"] = new[] { r, g, b };
+        var p = color.Split(',');
+        if (p.Length == 3 && byte.TryParse(p[0], out r) && byte.TryParse(p[1], out g) && byte.TryParse(p[2], out b)) { }
     }
-    var (ok, err, _) = await SendCommand(IpcMessageType.SetKeyboardEffect, cmd);
+    var power = vendorEffect != "" && bright > 0;
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetKeyboardEffect, new
+    {
+        Effect = power ? vendorEffect : null,
+        R = (int)r, G = (int)g, B = (int)b,
+        Brightness = bright, Speed = speed, Power = power
+    });
     Output(json, new { success = ok, effect, error = err });
 }, rgbEffect, rgbSpeed, rgbBright, rgbColor, rgbJson);
 root.AddCommand(rgbCmd);
 
 // ========================
-// display 命令
+// display 命令 (亮度走标准 WMI, 在 WPF/系统层处理; CLI 仅保留亮度)
 // ========================
-var displayCmd = new Command("display", "显示设置");
-var displayProfile = new Argument<string>("profile", "vibrant|internet|video|lowblue|cinema|photo");
-displayCmd.AddArgument(displayProfile);
-var displayBright = new Option<int?>("--brightness", () => null, "亮度 (0-100)");
-displayCmd.AddOption(displayBright);
+var displayCmd = new Command("display", "显示设置 (亮度 0-100, 标准 WMI 背光接口)");
+var displayBright = new Argument<int>("brightness", "亮度 (0-100)");
+displayCmd.AddArgument(displayBright);
 var displayJson = new Option<bool>("--json", () => false, "JSON 输出");
 displayCmd.AddOption(displayJson);
-displayCmd.SetHandler(async (profile, brightness, json) =>
+displayCmd.SetHandler(async (brightness, json) =>
 {
-    int pv = DisplayToInt(profile);
-    if (pv < 0) { OutputError(json, $"无效显示预设: {profile}"); return; }
-    var (ok, err, _) = await SendCommand(IpcMessageType.SetDisplaySettings, new { ColorProfile = pv, Brightness = brightness });
-    Output(json, new { success = ok, profile, error = err });
-}, displayProfile, displayBright, displayJson);
+    // 亮度直接在 CLI 进程内用 WMI 处理 (用户会话接口, 无需服务)
+    try
+    {
+        await Task.Run(() =>
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\wmi", "SELECT * FROM WmiMonitorBrightnessMethods");
+            var obj = searcher.Get().Cast<System.Management.ManagementObject>().FirstOrDefault()
+                      ?? throw new InvalidOperationException("未找到内建显示器背光控制器");
+            obj.InvokeMethod("WmiSetBrightness", new object[] { uint.MaxValue, (byte)Math.Clamp(brightness, 0, 100) });
+        });
+        Output(json, new { success = true, brightness });
+    }
+    catch (Exception ex) { OutputError(json, ex.Message); }
+}, displayBright, displayJson);
 root.AddCommand(displayCmd);
 
 // ========================
@@ -383,14 +405,6 @@ static List<object>? ParseFan(string? input)
 static int ModeToInt(string m) => m.ToLower() switch { "office" => 0, "gaming" => 1, "turbo" => 2, "custom" => 3, _ => -1 };
 static int GpuToInt(string m) => m.ToLower() switch { "igpu" => 0, "dgpu" => 1, "hybrid" => 2, "hotswap" => 3, _ => -1 };
 static string? DevToKey(string d) => d.ToLower() switch { "webcam" => "webcam", "dgpu" => "dgpu", "amdacp" => "amdacp", _ => null };
-static int RgbToInt(string e) => e.ToLower() switch {
-    "off" => 0, "static" => 1, "breathing" => 2, "wave" => 3, "reactive" => 4,
-    "rainbow" => 5, "ripple" => 6, "raindrop" => 10, "neon" => 15, "marquee" => 9,
-    "aurora" => 14, "music" => 34, "gaming" => 21, "spark" => 17, "flash" => 18, "mix" => 19, _ => -1
-};
-static int DisplayToInt(string p) => p.ToLower() switch {
-    "vibrant" => 0, "internet" => 1, "video" => 2, "lowblue" => 3, "cinema" => 4, "photo" => 5, _ => -1
-};
 
 // ======================================================================
 // HwProbe 内置诊断逻辑

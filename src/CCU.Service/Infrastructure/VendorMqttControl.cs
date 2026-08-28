@@ -153,7 +153,10 @@ public sealed class VendorMqttControl : IDisposable
     }
 
     /// <summary>QoS1 发布并等待 broker 确认（3 秒超时）。</summary>
-    private void PublishControl(object payload)
+    private void PublishControl(object payload) => PublishTopic("Fan/Control", payload);
+
+    /// <summary>向任意 vendor topic 发布（灯光等）。串行化 + QoS1 + 确认等待。</summary>
+    public void PublishTopic(string topic, object payload)
     {
         lock (_sync)
         {

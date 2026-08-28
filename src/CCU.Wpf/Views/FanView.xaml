@@ -6,30 +6,30 @@
 
     <StackPanel x:Name="LayoutRoot">
         <TextBlock Text="风扇控制" Style="{StaticResource TextHeading}" />
-        <TextBlock Text="拖拽节点调节 CPU / GPU 散热曲线" Style="{StaticResource TextSubtitle}" Margin="0,4,0,24" />
-
-        <!-- 模式切换 -->
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-            <Button Style="{StaticResource GhostButton}" Content="自动" Margin="0,0,8,0"
-                    Command="{Binding SetModeCommand}" CommandParameter="auto" />
-            <Button Style="{StaticResource GhostButton}" Content="手动" Margin="0,0,8,0"
-                    Command="{Binding SetModeCommand}" CommandParameter="manual" />
-            <Button Style="{StaticResource GhostButton}" Content="全速"
-                    Command="{Binding SetModeCommand}" CommandParameter="max" />
-            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding IndependentControl}"
-                      Margin="24,0,0,0" VerticalAlignment="Center" />
-            <TextBlock Text="风扇独立控制" FontSize="12" Foreground="{StaticResource BrushTextSecondary}"
-                       VerticalAlignment="Center" Margin="8,0,0,0" />
-        </StackPanel>
+        <TextBlock Text="当前散热曲线 (只读 · 曲线写入属 EC 研究支线，暂未开放)" Style="{StaticResource TextSubtitle}" Margin="0,4,0,8" />
+        <TextBlock Text="{Binding CurveSource}" FontSize="12" Margin="0,0,0,20"
+                   Foreground="{StaticResource BrushAccentSecondary}" />
 
         <!-- CPU 风扇曲线 -->
-        <TextBlock Text="CPU 风扇曲线" Style="{StaticResource SectionHeader}" />
+        <TextBlock Text="CPU 风扇曲线 (温度 → 占空比)" Style="{StaticResource SectionHeader}" />
         <conv:FanCurvePanel CurveData="{Binding CpuCurve}" LineColor="#FF00D4AA" FillColor="#2200D4AA" />
 
         <TextBlock Text=" " Height="20" />
 
         <!-- GPU 风扇曲线 -->
-        <TextBlock Text="GPU 风扇曲线" Style="{StaticResource SectionHeader}" />
+        <TextBlock Text="GPU 风扇曲线 (温度 → 占空比)" Style="{StaticResource SectionHeader}" />
         <conv:FanCurvePanel CurveData="{Binding GpuCurve}" LineColor="#FF0EA5E9" FillColor="#220EA5E9" />
+
+        <TextBlock Text="说明" Style="{StaticResource SectionHeader}" />
+        <Border Style="{StaticResource GlassCard}" Padding="16">
+            <StackPanel>
+                <TextBlock Text="· 曲线数据通过只读通道从 EC SMAPCTABLE 读取，未经验证时显示默认值" FontSize="12"
+                           Foreground="{StaticResource BrushTextSecondary}" />
+                <TextBlock Text="· 模式切换 (办公/游戏/狂暴) 已包含原厂整定的风扇策略" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{StaticResource BrushTextSecondary}" />
+                <TextBlock Text="· 自定义曲线写入将在 EC 研究支线验证后开放 (含备份/恢复保护)" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{StaticResource BrushTextMuted}" />
+            </StackPanel>
+        </Border>
     </StackPanel>
 </UserControl>

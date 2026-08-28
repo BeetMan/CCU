@@ -55,6 +55,7 @@ builder.Services.AddSingleton<HardwareMonitorService>();
 builder.Services.AddSingleton<VendorStateReader>();
 builder.Services.AddSingleton<VendorMqttControl>();
 builder.Services.AddSingleton<AppProfileStore>();
+builder.Services.AddSingleton<VendorLightingController>();
 
 // EC 研究支线（写入默认未被 IPC 路由启用）
 builder.Services.AddSingleton<PerformanceManager>();

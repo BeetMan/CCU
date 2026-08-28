@@ -18,6 +18,8 @@ public enum IpcMessageType
     SetTurboOc,       // MQTT: SET_OPERATING_MODE_DETAIL GpuCoreClockOffsetOC
     GetModeCatalog,   // 返回当前可用模式目录（含自定义 Profile）
     SetAppBindingEnabled, // 应用绑定自动切换总开关
+    SetLogoLight,     // MQTT: Logo 灯 (HidLightbar_Logo/Ctrl)
+    GetFanCurve,      // 只读: SMAPCTABLE 风扇曲线
     SaveAppProfile,
     DeleteAppProfile,
     StartOtaCheck,

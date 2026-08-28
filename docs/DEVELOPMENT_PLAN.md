@@ -56,6 +56,22 @@
 >   设置页新增应用绑定管理（列表/添加/删除/总开关）；
 > - 新增 `tests/smoke.ps1` 冒烟脚本（只读默认，-WithModeSwitch 可选）。
 > 编译 0 错误 0 新警告，未部署。
+>
+> **功能开发记录（同日，第三抨：剩余功能全部实现）**：
+> - **键盘 RGB (MQTT)**：`VendorLightingController` — 22 种灯效（词表来自反编译
+>   RGBKB_Effect 枚举），静态色命令用已验证结构，亮度 0-4 级/速度 1-5；
+>   Logo 灯 (HidLightbar_Logo/Ctrl) 独立开关，跟随键盘同色；
+> - **风扇曲线只读**：GetFanCurve IPC → SMAPCTABLE cmd 12 尽力读取，
+>   失败回退默认曲线；写入仍属研究支线未开放；
+> - **显示设置真实化**：亮度走标准 WMI WmiSetBrightness（用户会话），
+>   刷新率走 EnumDisplaySettings/ChangeDisplaySettings（异常自动还原）；
+>   色彩预设/ICC 依赖原厂专有协议，明确标注缓办；
+> - **监控补全**：HardwareInfo 增加风扇转速 (LHM)；
+> - CLI rgb 命令对齐新协议词表；display 命令改为直控亮度。
+> 编译 0 错误，非 CA1416 警告均为历史遗留。未部署未验证。
+>
+> **至此 MQTT 优先版本的全部规划功能已写完。** 剩余工作全部依赖真机调试窗口：
+> 部署 v22 → smoke.ps1 → 各功能逐个验证（灯效词表需重点验证）→ 修问题。
 
 ---
 

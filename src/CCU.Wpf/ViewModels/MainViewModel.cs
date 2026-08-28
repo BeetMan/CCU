@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CCU.Shared.IPC;
+using CCU.Shared.Models;
 using CCU.Wpf.Services;
 using CCU.Wpf.Views;
 
@@ -31,16 +33,17 @@ public partial class MainViewModel : ObservableObject
         {
             ["performance"] = new Views.PerformanceView { DataContext = perfVm },
             ["gpu"] = new Views.GpuView { DataContext = new GpuViewModel() },
-            ["fan"] = new Views.FanView { DataContext = new FanViewModel() },
-            ["keyboard"] = new Views.KeyboardView { DataContext = new KeyboardViewModel() },
+            ["fan"] = new Views.FanView { DataContext = _fanViewModel },
+            ["keyboard"] = new Views.KeyboardView { DataContext = new KeyboardViewModel(_ipc) },
             ["display"] = new Views.DisplayView { DataContext = new DisplayViewModel() },
             ["devices"] = new Views.DeviceView { DataContext = new DeviceViewModel() },
             ["demo"] = new Views.DemoView { DataContext = new DemoViewModel() }
         };
         CurrentView = _views["performance"];
 
-        // 异步拉取自定义 Profile 目录
+        // 异步拉取自定义 Profile 目录 + 风扇曲线
         _ = perfVm.LoadCatalogAsync(_ipc);
+        _ = _fanViewModel.LoadCurveAsync(_ipc);
 
         // 设置页：应用绑定管理
         _settingsViewModel = new SettingsViewModel(_ipc);
@@ -48,6 +51,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     private readonly SettingsViewModel _settingsViewModel;
+    private readonly FanViewModel _fanViewModel = new();
 
     // ========================
     // 硬件信息
@@ -311,29 +315,108 @@ public partial class GpuViewModel : ObservableObject
 // FanViewModel moved to FanViewModel.cs
 
 // ==============================================
-// 键盘 RGB ViewModel
+// 键盘 RGB ViewModel — 原厂 MQTT 灯效协议
 // ==============================================
 public partial class KeyboardViewModel : ObservableObject
 {
-    [ObservableProperty] private int _effect = 5; // rainbow
-    [ObservableProperty] private int _speed = 5;
-    [ObservableProperty] private int _brightness = 3;
+    private readonly CcuIpcService _ipc;
+    private readonly DispatcherTimer _debounce;
+
+    // 灯效名 = 原厂 RGBKB_Effect 枚举（反编译源码确认）
+    public static readonly (string Name, string VendorEffect)[] Effects =
+    {
+        ("关", ""),
+        ("静态", "Single"),
+        ("呼吸", "Breathing"),
+        ("波浪", "Wave"),
+        ("彩色波浪", "ColorfulWave"),
+        ("响应", "Reactive"),
+        ("彩虹", "Rainbow"),
+        ("演漪", "Ripple"),
+        ("雨滴", "Raindrop"),
+        ("跑马灯", "Marquee"),
+        ("冲击", "Impact"),
+        ("火花", "Spark"),
+        ("极光", "Aurora"),
+        ("音乐联动", "Music"),
+        ("游戏联动", "Gaming"),
+        ("闪烁", "Flash"),
+        ("混合", "Mix"),
+        ("霓虹闪烁", "Twinkling"),
+        ("黎明", "Dawn"),
+        ("正弦", "Sine"),
+        ("交错", "Interlace"),
+        ("对角", "Diagonal"),
+    };
+
+    [ObservableProperty] private string _effectName = "Single";
+    [ObservableProperty] private int _speed = 2;
+    [ObservableProperty] private int _brightness = 4; // 原厂等级 0-4 (25% 步进)
     [ObservableProperty] private byte _colorR = 0;
     [ObservableProperty] private byte _colorG = 212;
     [ObservableProperty] private byte _colorB = 170;
     [ObservableProperty] private bool _lightbarEnabled = true;
 
-    // 可用效果列表
-    public static readonly (string Name, int Id)[] Effects =
+    public KeyboardViewModel(CcuIpcService ipc)
     {
-        ("关", 0), ("静态", 1), ("呼吸", 2), ("波浪", 3),
-        ("响应", 4), ("彩虹", 5), ("涟漪", 6), ("雨滴", 10),
-        ("霓虹", 15), ("跑马灯", 9), ("极光", 14), ("音乐", 34),
-        ("游戏联动", 21), ("火花", 17), ("闪烁", 18), ("混合", 19)
-    };
+        _ipc = ipc;
+        // 色彩/亮度/速度调整 400ms 防抖后重发当前效果
+        _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _debounce.Tick += (_, _) => { _debounce.Stop(); _ = ApplyAsync(); };
+    }
+
+    public bool PowerOn => EffectName != "" && Brightness > 0;
 
     [RelayCommand]
-    private void SetEffect(int id) => Effect = id;
+    private void SetEffect(string name)
+    {
+        EffectName = name;
+        _ = ApplyAsync();
+    }
+
+    partial void OnSpeedChanged(int value) => RestartDebounce();
+    partial void OnBrightnessChanged(int value) => RestartDebounce();
+    partial void OnColorRChanged(byte value) => RestartDebounce();
+    partial void OnColorGChanged(byte value) => RestartDebounce();
+    partial void OnColorBChanged(byte value) => RestartDebounce();
+
+    partial void OnLightbarEnabledChanged(bool value)
+    {
+        _ = _ipc.SendCommandAsync(IpcMessageType.SetLogoLight,
+            new { R = (int)ColorR, G = (int)ColorG, B = (int)ColorB,
+                  Brightness = Brightness, Power = value });
+    }
+
+    private void RestartDebounce()
+    {
+        _debounce.Stop();
+        _debounce.Start();
+    }
+
+    private async Task ApplyAsync()
+    {
+        var effect = PowerOn ? EffectName : null;
+        await _ipc.SendCommandAsync(IpcMessageType.SetKeyboardEffect, new
+        {
+            Effect = effect,
+            R = (int)ColorR,
+            G = (int)ColorG,
+            B = (int)ColorB,
+            Brightness = Math.Clamp(Brightness, 0, 4),
+            Speed = Math.Clamp(Speed, 1, 5),
+            Power = PowerOn
+        });
+
+        // Logo 灯跟随同色
+        if (LightbarEnabled)
+        {
+            await _ipc.SendCommandAsync(IpcMessageType.SetLogoLight, new
+            {
+                R = (int)ColorR, G = (int)ColorG, B = (int)ColorB,
+                Brightness = Math.Clamp(Brightness, 0, 4), Power = PowerOn
+            });
+        }
+    }
 }
 
 // ==============================================
@@ -341,15 +424,163 @@ public partial class KeyboardViewModel : ObservableObject
 // ==============================================
 public partial class DisplayViewModel : ObservableObject
 {
-    [ObservableProperty] private int _profile = 0; // vibrant
     [ObservableProperty] private double _brightness = 50;
-    [ObservableProperty] private double _colorTemp = 6500;
-    [ObservableProperty] private double _saturation = 1.5;
-    [ObservableProperty] private double _contrast = 1.0;
-    [ObservableProperty] private double _gamma = 1.0;
+    [ObservableProperty] private ObservableCollection<string> _refreshRates = [];
+    [ObservableProperty] private string _selectedRefreshRate = "";
+    [ObservableProperty] private string _statusText = "";
+    private bool _suppressRateUpdate;
 
-    [RelayCommand]
-    private void SetProfile(int p) => Profile = p;
+    public DisplayViewModel()
+    {
+        _ = LoadDisplayStateAsync();
+    }
+
+    partial void OnBrightnessChanged(double value)
+    {
+        // 拖动结束前不频繁写 WMI（WmiSetBrightness 每次 50ms+）
+        if (_suppressRateUpdate) return;
+        _suppressRateUpdate = true;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250);
+            SetBrightnessWmi(Brightness);
+            _suppressRateUpdate = false;
+        });
+    }
+
+    partial void OnSelectedRefreshRateChanged(string value)
+    {
+        if (_suppressRateUpdate || string.IsNullOrEmpty(value)) return;
+        ApplyRefreshRate(value);
+    }
+
+    /// <summary>读取当前亮度 + 可用刷新率（标准系统 API，安全）</summary>
+    private async Task LoadDisplayStateAsync()
+    {
+        try
+        {
+            Brightness = await Task.Run(ReadBrightnessWmi);
+        }
+        catch { Brightness = 50; }
+
+        try
+        {
+            var rates = await Task.Run(ListRefreshRates);
+            _suppressRateUpdate = true;
+            RefreshRates.Clear();
+            foreach (var r in rates) RefreshRates.Add(r);
+            SelectedRefreshRate = rates.Count > 0 ? rates[^1] : ""; // 默认最高
+            _suppressRateUpdate = false;
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"刷新率枚举失败: {ex.Message}";
+        }
+    }
+
+    private static double ReadBrightnessWmi()
+    {
+        using var searcher = new System.Management.ManagementObjectSearcher(
+            @"root\wmi", "SELECT CurrentBrightness FROM WmiMonitorBrightness");
+        var obj = searcher.Get().Cast<System.Management.ManagementObject>().FirstOrDefault()
+                  ?? throw new InvalidOperationException("内建显示器不支持 WMI 亮度");
+        return Convert.ToDouble(obj["CurrentBrightness"]);
+    }
+
+    private static void SetBrightnessWmi(double value)
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\wmi", "SELECT * FROM WmiMonitorBrightnessMethods");
+            var obj = searcher.Get().Cast<System.Management.ManagementObject>().FirstOrDefault();
+            obj?.InvokeMethod("WmiSetBrightness", new object[] { uint.MaxValue, (byte)Math.Clamp(value, 0, 100) });
+        }
+        catch { /* 无背光控制器时静默 */ }
+    }
+
+    private static List<string> ListRefreshRates()
+    {
+        var rates = new SortedSet<int>();
+        var current = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
+        if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref current))
+            throw new InvalidOperationException("无法读取当前显示模式");
+
+        var dm = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
+        for (int i = 0; EnumDisplaySettings(null, i, ref dm); i++)
+        {
+            if (dm.dmPelsWidth == current.dmPelsWidth && dm.dmPelsHeight == current.dmPelsHeight)
+            {
+                rates.Add(dm.dmDisplayFrequency);
+            }
+        }
+        return rates.Select(r => r + " Hz").ToList();
+    }
+
+    private void ApplyRefreshRate(string rateText)
+    {
+        try
+        {
+            if (!int.TryParse(rateText.Replace(" Hz", ""), out var hz)) return;
+            var dm = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
+            EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref dm);
+            dm.dmDisplayFrequency = hz;
+            dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+
+            var result = ChangeDisplaySettings(ref dm, 0);
+            StatusText = result == 0 ? $"已切换到 {hz} Hz" : $"切换失败 (code {result})";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"刷新率切换失败: {ex.Message}";
+        }
+    }
+
+    // === user32 显示模式 P/Invoke ===
+    private const int ENUM_CURRENT_SETTINGS = -1;
+    private const int DM_PELSWIDTH = 0x80000;
+    private const int DM_PELSHEIGHT = 0x100000;
+    private const int DM_DISPLAYFREQUENCY = 0x400000;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    private struct DEVMODE
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+        public short dmSize;
+        public short dmDriverVersion;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public int dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+    private static extern bool EnumDisplaySettings(string? deviceName, int modeNum, ref DEVMODE dm);
+
+    [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+    private static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
 }
 
 // ==============================================

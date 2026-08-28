@@ -3,101 +3,50 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:CCU.Wpf.Converters">
 
-    <UserControl.Resources>
-        <conv:IntEqualityConverter x:Key="IntEq" />
-    </UserControl.Resources>
-
     <StackPanel>
         <TextBlock Text="显示设置" Style="{StaticResource TextHeading}" />
-        <TextBlock Text="色彩预设与显示调校" Style="{StaticResource TextSubtitle}" Margin="0,4,0,24" />
+        <TextBlock Text="亮度与刷新率 (标准系统接口)" Style="{StaticResource TextSubtitle}" Margin="0,4,0,24" />
 
-        <!-- 色彩预设 -->
-        <TextBlock Text="色彩预设" Style="{StaticResource SectionHeader}" />
+        <!-- 亮度 -->
+        <TextBlock Text="屏幕亮度" Style="{StaticResource SectionHeader}" />
         <Border Style="{StaticResource GlassCard}" Padding="16">
+            <StackPanel>
+                <Grid>
+                    <TextBlock Text="内建显示器背光" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
+                    <TextBlock HorizontalAlignment="Right" Text="{Binding Brightness, StringFormat='{}{0:F0}%'}"
+                               FontSize="14" FontFamily="{StaticResource FontMono}"
+                               Foreground="{StaticResource BrushAccentPrimary}" />
+                </Grid>
+                <Slider Style="{StaticResource NeonSlider}" Minimum="0" Maximum="100"
+                        Value="{Binding Brightness, Mode=TwoWay}" Margin="0,10,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 刷新率 -->
+        <TextBlock Text="刷新率" Style="{StaticResource SectionHeader}" />
+        <Border Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,0,8">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="预设模式" FontSize="13" Foreground="{StaticResource BrushTextSecondary}"
-                           VerticalAlignment="Center" />
-                <ComboBox Grid.Column="1" Width="220" HorizontalAlignment="Right"
+                <StackPanel>
+                    <TextBlock Text="当前分辨率下可用刷新率" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,4,0,0"
+                               Foreground="{StaticResource BrushAccentPrimary}" />
+                </StackPanel>
+                <ComboBox ItemsSource="{Binding RefreshRates}"
+                          SelectedItem="{Binding SelectedRefreshRate, Mode=TwoWay}"
+                          Width="140" HorizontalAlignment="Right"
                           Background="{StaticResource BrushBgTertiary}"
                           Foreground="{StaticResource BrushTextPrimary}"
-                          BorderBrush="{StaticResource BrushBorderCard}"
-                          FontSize="13"
-                          SelectedIndex="{Binding Profile}">
-                    <ComboBoxItem Content="鲜艳 — 高饱和" />
-                    <ComboBoxItem Content="上网 — 自然色" />
-                    <ComboBoxItem Content="视频 — 暖色调" />
-                    <ComboBoxItem Content="低蓝光 — 护眼" />
-                    <ComboBoxItem Content="影院 — D65校准" />
-                    <ComboBoxItem Content="照片 — sRGB" />
-                </ComboBox>
+                          BorderBrush="{StaticResource BrushBorderCard}" />
             </Grid>
         </Border>
 
-        <!-- 微调 -->
-        <TextBlock Text="微调" Style="{StaticResource SectionHeader}" />
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Border Grid.Column="0" Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,8,0">
-                <StackPanel>
-                    <Grid>
-                        <TextBlock Text="亮度" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock HorizontalAlignment="Right" Text="{Binding Brightness, StringFormat='{}{0:F0}'}"
-                                   FontSize="14" FontFamily="{StaticResource FontMono}"
-                                   Foreground="{StaticResource BrushAccentPrimary}" />
-                    </Grid>
-                    <Slider Style="{StaticResource NeonSlider}" Minimum="0" Maximum="100"
-                            Value="{Binding Brightness, Mode=TwoWay}" Margin="0,10,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Grid.Column="1" Style="{StaticResource GlassCard}" Padding="16" Margin="0,0,8,0">
-                <StackPanel>
-                    <Grid>
-                        <TextBlock Text="色温" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock HorizontalAlignment="Right" Text="{Binding ColorTemp, StringFormat='{}{0:F0}K'}"
-                                   FontSize="14" FontFamily="{StaticResource FontMono}"
-                                   Foreground="{StaticResource BrushAccentPrimary}" />
-                    </Grid>
-                    <Slider Style="{StaticResource NeonSlider}" Minimum="5000" Maximum="9300"
-                            Value="{Binding ColorTemp, Mode=TwoWay}"
-                            TickFrequency="100" Margin="0,10,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Grid.Column="2" Style="{StaticResource GlassCard}" Padding="16">
-                <StackPanel>
-                    <Grid>
-                        <TextBlock Text="饱和度" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock HorizontalAlignment="Right" Text="{Binding Saturation, StringFormat='{}{0:F1}'}"
-                                   FontSize="14" FontFamily="{StaticResource FontMono}"
-                                   Foreground="{StaticResource BrushAccentPrimary}" />
-                    </Grid>
-                    <Slider Style="{StaticResource NeonSlider}" Minimum="0.5" Maximum="2.5"
-                            Value="{Binding Saturation, Mode=TwoWay}"
-                            TickFrequency="0.1" Margin="0,10,0,0" />
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <!-- ICC -->
-        <TextBlock Text="ICC 管理" Style="{StaticResource SectionHeader}" />
         <Border Style="{StaticResource GlassCard}" Padding="16">
-            <Grid>
-                <StackPanel>
-                    <TextBlock Text="当前 ICC" FontSize="12" Foreground="{StaticResource BrushTextSecondary}" />
-                    <TextBlock Text="BOE0D55_JJ00GF..." FontSize="13" FontFamily="{StaticResource FontMono}"
-                               Foreground="{StaticResource BrushTextPrimary}" Margin="0,4,0,0" />
-                </StackPanel>
-                <Button Style="{StaticResource GhostButton}" Content="导入 ICC..."
-                        HorizontalAlignment="Right" VerticalAlignment="Center" />
-            </Grid>
+            <StackPanel>
+                <TextBlock Text="· 切换异常时 Windows 会在 15 秒内自动还原" FontSize="12"
+                           Foreground="{StaticResource BrushTextMuted}" />
+                <TextBlock Text="· 色彩预设/ICC 管理依赖原厂专有协议，将在后续版本评估" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{StaticResource BrushTextMuted}" />
+            </StackPanel>
         </Border>
     </StackPanel>
 </UserControl>

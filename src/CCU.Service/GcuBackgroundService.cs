@@ -24,6 +24,8 @@ public class GcuBackgroundService : BackgroundService
     private readonly AppProfileStore _appProfiles;
     private readonly WmiAcpiClient _acpi;
     private readonly KernelAcpiClient _kernelAcpi;
+    private readonly VendorLightingController _lighting;
+    private readonly FanControlManager _fanManager;
     private readonly PipeServer _pipeServer;
 
     // 应用绑定自动切换状态机
@@ -39,6 +41,8 @@ public class GcuBackgroundService : BackgroundService
         VendorMqttControl mqtt,
         VendorStateReader stateReader,
         AppProfileStore appProfiles,
+        VendorLightingController lighting,
+        FanControlManager fanManager,
         WmiAcpiClient acpi,
         KernelAcpiClient kernelAcpi)
     {
@@ -48,6 +52,8 @@ public class GcuBackgroundService : BackgroundService
         _mqtt = mqtt;
         _stateReader = stateReader;
         _appProfiles = appProfiles;
+        _lighting = lighting;
+        _fanManager = fanManager;
         _acpi = acpi;
         _kernelAcpi = kernelAcpi;
 
@@ -133,6 +139,9 @@ public class GcuBackgroundService : BackgroundService
                 IpcMessageType.SetAppBindingEnabled => HandleSetAppBindingEnabled(message),
                 IpcMessageType.SaveAppProfile => HandleSaveAppProfile(message),
                 IpcMessageType.DeleteAppProfile => HandleDeleteAppProfile(message),
+                IpcMessageType.SetKeyboardEffect => HandleSetKeyboardEffect(message),
+                IpcMessageType.SetLogoLight => HandleSetLogoLight(message),
+                IpcMessageType.GetFanCurve => HandleGetFanCurve(),
                 IpcMessageType.EcDiagnostic => HandleEcDiagnostic(),
                 IpcMessageType.KernelEcDiagnostic => HandleKernelEcDiagnostic(),
 
@@ -168,6 +177,20 @@ public class GcuBackgroundService : BackgroundService
             GpuUsage = GpuUsage() ?? 0,
             Timestamp = DateTime.UtcNow,
         };
+
+        // 风扇转速 (LibreHardwareMonitor, 尽力而为)
+        try
+        {
+            var fans = _hwMonitor.GetFanSpeeds();
+            var cpuFan = fans.FirstOrDefault(f => f.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase));
+            var gpuFan = fans.FirstOrDefault(f => !f.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase));
+            info.CpuFanSpeed = cpuFan?.Rpm ?? 0;
+            info.GpuFanSpeed = gpuFan?.Rpm ?? 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "风扇转速读取失败");
+        }
 
         // 原厂模式状态（配置文件只读解析，不依赖硬件监控）
         var mode = _stateReader.ReadModeState();
@@ -243,6 +266,43 @@ public class GcuBackgroundService : BackgroundService
         if (req == null) return Error("Invalid payload");
         _mqtt.SetTurboOc(req.Offset);
         return IpcMessage.Create(IpcMessageType.Ack, new { Success = true, Offset = req.Offset });
+    }
+
+    private IpcMessage HandleSetKeyboardEffect(IpcMessage msg)
+    {
+        var req = msg.DeserializePayload<KeyboardEffectRequest>();
+        if (req == null) return Error("Invalid payload");
+        if (req.Power && req.Effect is not null && !VendorLightingController.SupportedEffects.Contains(req.Effect))
+            return Error($"不支持的灯效: {req.Effect}");
+
+        _lighting.ApplyKeyboard(
+            req.Effect ?? "Single", (byte)req.R, (byte)req.G, (byte)req.B,
+            req.Brightness, req.Speed, req.Power);
+        return IpcMessage.Create(IpcMessageType.Ack, new { Success = true });
+    }
+
+    private IpcMessage HandleSetLogoLight(IpcMessage msg)
+    {
+        var req = msg.DeserializePayload<LogoLightRequest>();
+        if (req == null) return Error("Invalid payload");
+        _lighting.ApplyLogo((byte)req.R, (byte)req.G, (byte)req.B, req.Brightness, req.Power);
+        return IpcMessage.Create(IpcMessageType.Ack, new { Success = true });
+    }
+
+    /// <summary>风扇曲线只读 (SMAPCTABLE cmd 12)。写入仍属研究支线未开放。</summary>
+    private IpcMessage HandleGetFanCurve()
+    {
+        try
+        {
+            var cpu = _fanManager.GetCpuFanCurve();
+            var gpu = _fanManager.GetGpuFanCurve();
+            return IpcMessage.Create(IpcMessageType.Ack, new { Success = true, CpuCurve = cpu, GpuCurve = gpu });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "风扇曲线读取失败 (SMAPCTABLE cmd 12 未验证，属预期内可失败项)");
+            return Error($"风扇曲线读取失败: {ex.Message}");
+        }
     }
 
     private IpcMessage Error(string msg) =>
@@ -416,3 +476,5 @@ internal record SetFanBoostRequest(bool Enable);
 internal record SetTurboOcRequest(int Offset);
 internal record SetAppBindingEnabledRequest(bool Enabled);
 internal record AppProfileRequest(string Process, int Mode, int? ProfileIndex, int? Silent, int? Extreme, string? Label);
+internal record KeyboardEffectRequest(string? Effect, int R, int G, int B, int Brightness, int Speed, bool Power);
+internal record LogoLightRequest(int R, int G, int B, int Brightness, bool Power);
