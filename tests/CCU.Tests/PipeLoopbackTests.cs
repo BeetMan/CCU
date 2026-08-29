@@ -70,6 +70,65 @@ public class PipeLoopbackTests
     }
 
     [Fact]
+    public async Task ConcurrentRequests_OnOneClient_KeepResponsesMatched()
+    {
+        var pipeName = $"CCU.Test.Pipe.Concurrent.{Guid.NewGuid():N}";
+        using var server = new PipeServer(pipeName, async request =>
+        {
+            await Task.Delay(5);
+            var payload = request.DeserializePayload<EchoRequest>();
+            return IpcMessage.Create(IpcMessageType.Ack, new { payload!.Id });
+        });
+        server.Start();
+
+        using var client = new PipeClient(pipeName);
+        Assert.True(await client.ConnectAsync(3000));
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 32).Select(async id =>
+        {
+            var response = await client.SendAsync(
+                IpcMessage.Create(IpcMessageType.SetPerformanceMode, new EchoRequest(id)));
+            return (Expected: id, Response: response);
+        }));
+
+        foreach (var item in responses)
+        {
+            Assert.NotNull(item.Response);
+            Assert.Equal(IpcMessageType.Ack, item.Response!.Type);
+            Assert.Equal(item.Expected, item.Response.DeserializePayload<EchoRequest>()!.Id);
+        }
+    }
+
+    [Fact]
+    public async Task MultiplePersistentClients_CanUseServerTogether()
+    {
+        var pipeName = $"CCU.Test.Pipe.MultiClient.{Guid.NewGuid():N}";
+        var logs = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        using var server = new PipeServer(pipeName, request =>
+        {
+            var payload = request.DeserializePayload<EchoRequest>();
+            return Task.FromResult(IpcMessage.Create(IpcMessageType.Ack, new { payload!.Id }));
+        }, logs.Enqueue);
+        server.Start();
+
+        using var first = new PipeClient(pipeName);
+        using var second = new PipeClient(pipeName);
+        Assert.True(await first.ConnectAsync(3000));
+        Assert.True(await second.ConnectAsync(3000), string.Join(Environment.NewLine, logs));
+
+        var firstTask = first.SendAsync(
+            IpcMessage.Create(IpcMessageType.GetHardwareInfo, new EchoRequest(101)));
+        var secondTask = second.SendAsync(
+            IpcMessage.Create(IpcMessageType.GetHardwareInfo, new EchoRequest(202)));
+        var responses = await Task.WhenAll(firstTask, secondTask);
+
+        Assert.Equal(101, responses[0]!.DeserializePayload<EchoRequest>()!.Id);
+        Assert.Equal(202, responses[1]!.DeserializePayload<EchoRequest>()!.Id);
+    }
+
+    private sealed record EchoRequest(int Id);
+
+    [Fact]
     public async Task MalformedJson_GracefullyClosed_NoCrash()
     {
         var pipeName = "CCU.Test.Pipe.Bad";

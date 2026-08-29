@@ -144,13 +144,16 @@
         <!-- 当前模式指示 + 狂暴细分 + 自定义 Profile -->
         <Grid Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Border Grid.Column="0" Padding="12,6" CornerRadius="8" Background="#2200D4AA" VerticalAlignment="Center">
                 <TextBlock Text="{Binding DataContext.ModeLabel, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=--}"
                            FontWeight="SemiBold" Foreground="{StaticResource BrushAccentPrimary}" />
             </Border>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <TextBlock Grid.Column="1" Text="切换中，正在等待原厂确认..." FontSize="12" Foreground="{StaticResource BrushTextSecondary}"
+                       VerticalAlignment="Center" Margin="10,0,0,0"
+                       Visibility="{Binding DataContext.ModeCommandInProgress, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                 <!-- 狂暴细分（仅狂暴模式有效） -->
                 <Button Margin="4,0,0,0" Padding="14,6" Cursor="Hand"
                         Command="{Binding DataContext.SetTurboDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -172,7 +175,8 @@
                 <DataTemplate>
                     <Button Margin="0,0,8,0" Padding="14,6" Cursor="Hand"
                             Command="{Binding DataContext.SetCustomProfileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding Slot}">
+                            CommandParameter="{Binding Slot, Mode=OneTime}"
+                            BorderThickness="0" Background="Transparent">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
                                 <Border Name="chip" Padding="{TemplateBinding Padding}" CornerRadius="16"

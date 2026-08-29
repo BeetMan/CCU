@@ -73,8 +73,12 @@ public partial class MainViewModel : ObservableObject
     // ========================
     [ObservableProperty] private int _activePerformanceMode;
     [ObservableProperty] private string _modeLabel = "--";
+    [ObservableProperty] private bool _modeCommandInProgress;
     [ObservableProperty] private bool _fanBoostOn;
     [ObservableProperty] private int _gpuOcOffset;
+    private bool _modeCommandPending;
+    private DateTimeOffset _modeCommandStartedUtc;
+    private bool _fanBoostCommandPending;
 
     // ========================
     // 导航
@@ -96,7 +100,7 @@ public partial class MainViewModel : ObservableObject
     // 全局操作
     // ========================
     [RelayCommand]
-    private void SetPerformanceMode(string mode)
+    private async Task SetPerformanceMode(string mode)
     {
         ActiveNav = mode switch
         {
@@ -105,37 +109,88 @@ public partial class MainViewModel : ObservableObject
         };
 
         var request = ModeToPayload(mode);
-        ActivePerformanceMode = (int)(request.GetType().GetProperty("Mode")?.GetValue(request) ?? 0);
-        App.NotifyModeChanged(ActivePerformanceMode);
-
-        // IPC 异步发送，不阻塞 UI
-        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode, request);
+        var targetMode = (int)(request.GetType().GetProperty("Mode")?.GetValue(request) ?? 0);
+        await SendModeCommandAsync(request, targetMode);
     }
 
     [RelayCommand]
-    private void SetTurboDetail(string detail)
+    private async Task SetTurboDetail(string detail)
     {
         var silent = detail == "silent";
-        ActivePerformanceMode = 2;
-        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode,
-            new { Mode = 2, Silent = (int?)(silent ? 1 : 0), Extreme = (int?)(silent ? 0 : 1) });
+        await SendModeCommandAsync(
+            new { Mode = 2, Silent = (int?)(silent ? 1 : 0), Extreme = (int?)(silent ? 0 : 1) }, 2);
     }
 
     [RelayCommand]
-    private void SetCustomProfile(string slot)
+    private async Task SetCustomProfile(int slotNumber)
     {
-        if (!int.TryParse(slot, out var slotNumber) || slotNumber < 1) return;
-        ActivePerformanceMode = 3;
-        _ = _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode,
-            new { Mode = 3, ProfileIndex = slotNumber - 1 });
+        if (slotNumber < 1) return;
+        await SendModeCommandAsync(new { Mode = 3, ProfileIndex = slotNumber - 1 }, 3);
+    }
+
+    private async Task SendModeCommandAsync(object request, int targetMode)
+    {
+        if (_modeCommandPending) return;
+
+        var previous = ActivePerformanceMode;
+        _modeCommandPending = true;
+        _modeCommandStartedUtc = DateTimeOffset.UtcNow;
+        ModeCommandInProgress = true;
+        ActivePerformanceMode = targetMode;
+        App.NotifyModeChanged(targetMode);
+
+        try
+        {
+            var success = await _ipc.SendCommandAsync(IpcMessageType.SetPerformanceMode, request);
+            if (!success)
+            {
+                ActivePerformanceMode = previous;
+                App.NotifyModeChanged(previous);
+            }
+            else if (targetMode == 3 &&
+                     request.GetType().GetProperty("ProfileIndex")?.GetValue(request) is int profileIndex)
+            {
+                ModeLabel = $"Profile {profileIndex + 1}";
+            }
+        }
+        finally
+        {
+            _modeCommandPending = false;
+            ModeCommandInProgress = false;
+        }
+    }
+
+    private void PollModeCommandTimeout()
+    {
+        if (!_modeCommandPending || !ModeCommandInProgress ||
+            DateTimeOffset.UtcNow - _modeCommandStartedUtc <= TimeSpan.FromSeconds(10))
+            return;
+
+        // 服务可能已完成但 Ack 未回到 UI。10 秒后解除命令锁，由真实状态轮询收敛。
+        _modeCommandPending = false;
+        ModeCommandInProgress = false;
     }
 
     [RelayCommand]
-    private void ToggleFanBoost()
+    private async Task ToggleFanBoost()
     {
-        var target = !FanBoostOn;
-        FanBoostOn = target; // 乐观更新，轮询会纠正
-        _ = _ipc.SendCommandAsync(IpcMessageType.SetFanBoost, new { Enable = target });
+        if (_fanBoostCommandPending) return;
+
+        var previous = FanBoostOn;
+        var target = !previous;
+        _fanBoostCommandPending = true;
+        FanBoostOn = target;
+        try
+        {
+            var success = await _ipc.SendCommandAsync(
+                IpcMessageType.SetFanBoost, new { Enable = target });
+            if (!success)
+                FanBoostOn = previous;
+        }
+        finally
+        {
+            _fanBoostCommandPending = false;
+        }
     }
 
     [RelayCommand]
@@ -147,13 +202,14 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private static void MinimizeToTray() => Application.Current.MainWindow!.Hide();
+    private static void MinimizeToTray() => Application.Current?.MainWindow?.Hide();
 
     [RelayCommand]
     private static void Exit() => Application.Current.Shutdown();
 
     private async Task PollHardwareAsync()
     {
+        PollModeCommandTimeout();
         try
         {
             var info = await _ipc.SendAsync<HardwareInfoDto>(IpcMessageType.GetHardwareInfo, new { });
@@ -172,12 +228,13 @@ public partial class MainViewModel : ObservableObject
             BatteryLevel = info.BatteryLevel;
 
             // 真实模式状态以服务轮询结果为准（乐观更新后由它纠正）
-            if (info.OperatingMode >= 0)
+            if (!_modeCommandPending && info.OperatingMode >= 0)
             {
                 ActivePerformanceMode = info.OperatingMode;
                 ModeLabel = string.IsNullOrWhiteSpace(info.ModeLabel) ? "--" : info.ModeLabel;
             }
-            FanBoostOn = info.FanBoostEnabled == 1;
+            if (!_fanBoostCommandPending)
+                FanBoostOn = info.FanBoostEnabled == 1;
             GpuOcOffset = info.TurboGpuOcOffset;
 
             // 同步到性能页 ViewModel

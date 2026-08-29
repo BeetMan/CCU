@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace CCU.Service.Infrastructure;
@@ -9,6 +8,7 @@ namespace CCU.Service.Infrastructure;
 /// 协议来源:
 /// - 静态色命令: DynamicLightingBridge 实测验证 (SetEffectALL / effect=Single)
 /// - 灯效词表: 原厂 CCUWinUI 反编译源码 RGBKB_Effect 枚举 (26 种)
+/// - 方向和色盘: 原厂 RgbKeyboardView::SetDirection/ChangeEffectColorCount/SendToServer
 /// - 亮度等级: 1-4 (25% 步进, PercentToVendorLevel)
 /// - topic: Keyboard/Ctrl (键盘), HidLightbar_Logo/Ctrl (Logo 灯)
 /// </summary>
@@ -35,10 +35,13 @@ public sealed class VendorLightingController
         "Sine", "Interlace", "Diagonal", "Thinking", "Devour"
     ];
 
-    /// <summary>
-    /// 设置键盘灯效。effect=null 表示纯亮度/开关调节（沿用最近效果由固件记忆，仅发亮度）。
-    /// </summary>
-    public void ApplyKeyboard(string effect, byte r, byte g, byte b, int brightnessLevel, int speed, bool on)
+    public static readonly IReadOnlyList<string> SupportedWaveDirections =
+        ["LeftRight", "RightLeft"];
+
+    /// <summary>设置键盘灯效。</summary>
+    public void ApplyKeyboard(
+        string effect, byte r, byte g, byte b, int brightnessLevel, int speed, bool on,
+        string? direction = null)
     {
         if (!on || brightnessLevel <= 0)
         {
@@ -47,16 +50,14 @@ public sealed class VendorLightingController
             return;
         }
 
-        var payload = new Dictionary<string, object?>
-        {
-            ["function"] = "SetPower",
-            ["powerstatus"] = 1,
-        };
-        _mqtt.PublishTopic(KeyboardTopic, payload);
+        _mqtt.PublishTopic(KeyboardTopic, new { function = "SetPower", powerstatus = 1 });
 
-        _mqtt.PublishTopic(KeyboardTopic, CreateEffectCommand(effect, r, g, b, brightnessLevel, speed));
-        _logger.LogInformation("键盘灯效: {Effect} RGB({R},{G},{B}) 亮度{Level} 速度{Speed}",
-            effect, r, g, b, brightnessLevel, speed);
+        var effectiveDirection = ResolveDirection(effect, direction);
+        _mqtt.PublishTopic(KeyboardTopic,
+            CreateEffectCommand(effect, r, g, b, brightnessLevel, speed, effectiveDirection));
+        _logger.LogInformation(
+            "键盘灯效: {Effect} RGB({R},{G},{B}) 亮度{Level} 速度{Speed} 方向{Direction}",
+            effect, r, g, b, brightnessLevel, speed, effectiveDirection);
     }
 
     /// <summary>Logo 灯 — 已验证的静态色命令。</summary>
@@ -74,19 +75,18 @@ public sealed class VendorLightingController
         _logger.LogInformation("Logo 灯: RGB({R},{G},{B}) 亮度{Level}", r, g, b, brightnessLevel);
     }
 
-    /// <summary>
-    /// 效果命令 — 结构与已验证的静态色命令一致，仅 effect/speed/direction 不同。
-    /// </summary>
-    private static object CreateEffectCommand(string effect, byte r, byte g, byte b, int level, int speed) => new
+    /// <summary>效果命令 — 与原厂 SendToServer 结构一致。</summary>
+    private static object CreateEffectCommand(
+        string effect, byte r, byte g, byte b, int level, int speed, string direction) => new
     {
         function = "SetEffectALL",
         mode = "Lighting",
         effect,
         light = level.ToString(),
         speed = Math.Clamp(speed, 1, 5).ToString(),
-        direction = (string?)null,
-        nv_save = (string?)null,
-        color = CreateColorPayload(r, g, b),
+        direction,
+        nv_save = "0",
+        color = CreateColorPayload(r, g, b, UsesRainbowPalette(effect)),
         MonochromeIndex = "33",
         ManualIndex1 = "1",
         ManualIndex2 = "5",
@@ -105,9 +105,9 @@ public sealed class VendorLightingController
         effect = "Single",
         light = level.ToString(),
         speed = "2",
-        direction = (string?)null,
-        nv_save = (string?)null,
-        color = CreateColorPayload(r, g, b),
+        direction = "None",
+        nv_save = "0",
+        color = CreateColorPayload(r, g, b, useRainbowPalette: false),
         MonochromeIndex = "33",
         ManualIndex1 = "1",
         ManualIndex2 = "5",
@@ -119,23 +119,51 @@ public sealed class VendorLightingController
         BreathingIndex = "1"
     };
 
-    private static object CreateColorPayload(byte r, byte g, byte b) => new
+    private static string ResolveDirection(string effect, string? requestedDirection)
     {
-        isCircular = false,
-        ColorBlocks = 1,
-        ColorBuffer = new[]
+        if (!effect.Equals("Wave", StringComparison.OrdinalIgnoreCase) &&
+            !effect.Equals("Sine", StringComparison.OrdinalIgnoreCase) &&
+            !effect.Equals("Diagonal", StringComparison.OrdinalIgnoreCase))
+            return "None";
+
+        if (string.IsNullOrWhiteSpace(requestedDirection))
+            return "LeftRight";
+
+        var direction = SupportedWaveDirections.FirstOrDefault(
+            candidate => candidate.Equals(requestedDirection, StringComparison.OrdinalIgnoreCase));
+        return direction ?? throw new ArgumentException($"不支持的波浪方向: {requestedDirection}");
+    }
+
+    private static bool UsesRainbowPalette(string effect) =>
+        effect.Equals("Wave", StringComparison.OrdinalIgnoreCase) ||
+        effect.Equals("ColorfulWave", StringComparison.OrdinalIgnoreCase) ||
+        effect.Equals("Rainbow", StringComparison.OrdinalIgnoreCase);
+
+    private static object CreateColorPayload(byte r, byte g, byte b, bool useRainbowPalette)
+    {
+        (byte R, byte G, byte B)[] colors = useRainbowPalette
+            ?
+            [
+                (255, 0, 0), (255, 165, 0), (255, 255, 0), (0, 255, 0),
+                (0, 0, 255), (0, 255, 255), (139, 0, 255)
+            ]
+            : Enumerable.Repeat((r, g, b), 7).ToArray();
+
+        return new
         {
-            new
+            isCircular = true,
+            ColorBlocks = colors.Length,
+            ColorBuffer = colors.Select((color, index) => new
             {
-                ID = 0,
-                R = r,
-                G = g,
-                B = b,
-                SolidColorEnd = $"{r:X2}{g:X2}{b:X2}",
+                ID = index,
+                color.R,
+                color.G,
+                color.B,
+                SolidColorEnd = $"{color.R:X2}{color.G:X2}{color.B:X2}",
                 R_position = 0,
                 W_position = 100,
                 B_position = 100
-            }
-        }
-    };
+            }).ToArray()
+        };
+    }
 }

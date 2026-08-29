@@ -32,7 +32,9 @@ public class GcuBackgroundService : BackgroundService
     private string? _lastForegroundProcess;
     private VendorModeDefinition? _autoAppliedMode;
     private DateTime _lastAutoSwitchAt = DateTime.MinValue;
+    private DateTime _nextMqttRetryAtUtc = DateTime.MinValue;
     private static readonly TimeSpan AutoSwitchCooldown = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan MqttRetryInterval = TimeSpan.FromSeconds(10);
 
     public GcuBackgroundService(
         ILogger<GcuBackgroundService> logger,
@@ -83,7 +85,9 @@ public class GcuBackgroundService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "GCUBridge MQTT 初始连接失败，将在处理命令时重试");
+            _nextMqttRetryAtUtc = DateTime.UtcNow.Add(MqttRetryInterval);
+            _logger.LogWarning(ex, "GCUBridge MQTT 初始连接失败，将每 {Seconds} 秒重试",
+                MqttRetryInterval.TotalSeconds);
         }
 
         // 启动 IPC 管道
@@ -95,10 +99,19 @@ public class GcuBackgroundService : BackgroundService
         {
             try
             {
-                if (!_mqtt.IsConnected)
+                if (!_mqtt.IsConnected && DateTime.UtcNow >= _nextMqttRetryAtUtc)
                 {
-                    try { _mqtt.EnsureConnected(); }
-                    catch (Exception ex) { _logger.LogDebug(ex, "MQTT 重连待重试"); }
+                    try
+                    {
+                        _mqtt.EnsureConnected();
+                        _nextMqttRetryAtUtc = DateTime.MinValue;
+                    }
+                    catch (Exception ex)
+                    {
+                        _nextMqttRetryAtUtc = DateTime.UtcNow.Add(MqttRetryInterval);
+                        _logger.LogDebug(ex, "MQTT 重连失败，{Seconds} 秒后重试",
+                            MqttRetryInterval.TotalSeconds);
+                    }
                 }
 
                 try { _hwMonitor.Update(); }
@@ -277,7 +290,7 @@ public class GcuBackgroundService : BackgroundService
 
         _lighting.ApplyKeyboard(
             req.Effect ?? "Single", (byte)req.R, (byte)req.G, (byte)req.B,
-            req.Brightness, req.Speed, req.Power);
+            req.Brightness, req.Speed, req.Power, req.Direction);
         return IpcMessage.Create(IpcMessageType.Ack, new { Success = true });
     }
 
@@ -476,5 +489,7 @@ internal record SetFanBoostRequest(bool Enable);
 internal record SetTurboOcRequest(int Offset);
 internal record SetAppBindingEnabledRequest(bool Enabled);
 internal record AppProfileRequest(string Process, int Mode, int? ProfileIndex, int? Silent, int? Extreme, string? Label);
-internal record KeyboardEffectRequest(string? Effect, int R, int G, int B, int Brightness, int Speed, bool Power);
+internal record KeyboardEffectRequest(
+    string? Effect, int R, int G, int B, int Brightness, int Speed, bool Power,
+    string? Direction = null);
 internal record LogoLightRequest(int R, int G, int B, int Brightness, bool Power);

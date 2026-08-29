@@ -11,6 +11,7 @@ public class CcuIpcService : IDisposable
 {
     private PipeClient? _client;
     private readonly string _pipeName = "CCU.Service.Pipe";
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
     private bool _disposed;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -21,8 +22,28 @@ public class CcuIpcService : IDisposable
 
     public async Task<bool> ConnectAsync()
     {
-        _client = new PipeClient(_pipeName);
-        return await _client.ConnectAsync();
+        await _connectGate.WaitAsync();
+        try
+        {
+            if (_disposed) return false;
+            if (_client?.IsConnected == true) return true;
+
+            var candidate = new PipeClient(_pipeName);
+            if (!await candidate.ConnectAsync())
+            {
+                candidate.Dispose();
+                return false;
+            }
+
+            var previous = _client;
+            _client = candidate;
+            previous?.Dispose();
+            return true;
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
     }
 
     public async Task<T?> SendAsync<T>(IpcMessageType type, object payload) where T : class

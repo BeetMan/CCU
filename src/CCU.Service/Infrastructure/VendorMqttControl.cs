@@ -15,22 +15,28 @@ namespace CCU.Service.Infrastructure;
 /// - 控制 topic: Fan/Control（模式/OC/强冷共用，靠 Action 字段区分）
 /// - 状态确认: 切换后轮询智控中心配置文件直到状态匹配（与 Mode Tray 一致）
 ///
-/// 与 Mode Tray 的差异：这里是常驻连接 + 自动重连 + 串行化发布，
-/// 且默认使用独立的 clientId 后缀（_21）避免把 Mode Tray（_19）踢下线。
+/// 与 Mode Tray 的差异：这里是常驻连接 + 自动重连 + 串行化发布。
+/// GCUBridge 仅创建 PluginClient_0..19；_19 保留给 Mode Tray，CCU 从 _18 向下选择可用槽位。
 /// </summary>
 public sealed class VendorMqttControl : IDisposable
 {
+    private sealed record Credential(string ClientId, string Username, string Password);
+
+    private static readonly System.Reflection.MethodInfo MqttCloseMethod =
+        typeof(MqttClient).GetMethod("Close",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new MissingMethodException(typeof(MqttClient).FullName, "Close");
+
     private readonly ILogger<VendorMqttControl> _logger;
     private readonly VendorStateReader _stateReader;
     private readonly object _sync = new(); // M2Mqtt 非线程安全：连接与发布全部串行化
 
     private readonly string _host;
     private readonly int _port;
-    private readonly string _clientId;
-    private readonly string _username;
-    private readonly string _password;
+    private readonly IReadOnlyList<Credential> _credentials;
 
     private MqttClient? _client;
+    private string? _activeClientId;
     private bool _connected;
 
     public VendorMqttControl(
@@ -46,13 +52,27 @@ public sealed class VendorMqttControl : IDisposable
         _stateReader = stateReader;
         _host = host ?? "127.0.0.1";
         _port = port ?? 13688;
-        // 注意：clientId 后缀必须与 Mode Tray (_19) 不同，否则会互踢
-        _clientId = clientId ?? "PluginClient_21";
-        _username = username ?? "PluginClient_User_21";
-        _password = password ?? "PluginClient_Pwd888881772688_21";
+
+        if (clientId is not null || username is not null || password is not null)
+        {
+            if (clientId is null || username is null || password is null)
+                throw new ArgumentException("显式 MQTT 凭据必须同时提供 clientId、username 和 password。");
+            _credentials = [new Credential(clientId, username, password)];
+        }
+        else
+        {
+            // 原厂 ClientManager("PluginClient", 20) 只生成 0..19；19 被 Mode Tray 使用。
+            _credentials = Enumerable.Range(0, 19).Reverse()
+                .Select(i => new Credential(
+                    $"PluginClient_{i}",
+                    $"PluginClient_User_{i}",
+                    $"PluginClient_Pwd888881772688_{i}"))
+                .ToArray();
+        }
     }
 
     public bool IsConnected => Volatile.Read(ref _connected);
+    public string? ActiveClientId => Volatile.Read(ref _activeClientId);
 
     /// <summary>建立连接（已连接则跳过）。失败抛异常，由调用方决定重试策略。</summary>
     public void EnsureConnected()
@@ -60,33 +80,79 @@ public sealed class VendorMqttControl : IDisposable
         lock (_sync)
         {
             if (_connected && _client?.IsConnected == true) return;
-            try
-            {
-                _client?.Disconnect();
-            }
-            catch { /* 旧连接清理失败无所谓 */ }
 
-            var client = new MqttClient(_host, _port, false, null, null, MqttSslProtocols.None);
-            client.MqttMsgPublishReceived += (_, _) => { /* 预留：状态 topic 订阅 */ };
-            client.ConnectionClosed += (_, _) =>
+            var oldClient = _client;
+            _client = null;
+            _activeClientId = null;
+            Volatile.Write(ref _connected, false);
+            CloseClient(oldClient);
+
+            var rejected = new List<string>();
+            foreach (var credential in _credentials)
             {
-                if (Volatile.Read(ref _connected))
+                var client = new MqttClient(_host, _port, false, null, null, MqttSslProtocols.None);
+                client.MqttMsgPublishReceived += (_, _) => { /* 预留：状态 topic 订阅 */ };
+                client.ConnectionClosed += (_, _) =>
                 {
-                    Volatile.Write(ref _connected, false);
-                    _logger.LogWarning("GCUBridge MQTT 连接断开");
-                }
-            };
+                    // 拒绝连接的临时 client 关闭时不能覆盖后来成功连接的状态。
+                    if (ReferenceEquals(_client, client) && Volatile.Read(ref _connected))
+                    {
+                        Volatile.Write(ref _connected, false);
+                        _logger.LogWarning("GCUBridge MQTT 连接断开 (clientId={ClientId})", credential.ClientId);
+                    }
+                };
 
-            var result = client.Connect(_clientId, _username, _password);
-            if (result != 0 || !client.IsConnected)
-            {
-                throw new InvalidOperationException($"GCUBridge MQTT 连接失败，返回码 {result}");
+                byte result;
+                try
+                {
+                    result = client.Connect(credential.ClientId, credential.Username, credential.Password);
+                }
+                catch
+                {
+                    CloseClient(client);
+                    throw;
+                }
+
+                if (result == 0 && client.IsConnected)
+                {
+                    _client = client;
+                    _activeClientId = credential.ClientId;
+                    Volatile.Write(ref _connected, true);
+                    _logger.LogInformation("GCUBridge MQTT 已连接 ({Host}:{Port}, clientId={ClientId})",
+                        _host, _port, credential.ClientId);
+                    return;
+                }
+
+                // M2Mqtt 在 CONNACK 拒绝后不会自行关闭底层 socket；必须显式 Close。
+                CloseClient(client);
+                if (result == 2) // IdentifierRejected：槽位不存在或已占用，继续尝试下一个
+                {
+                    rejected.Add(credential.ClientId);
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    $"GCUBridge MQTT 连接失败，clientId={credential.ClientId}，返回码 {result}");
             }
 
-            _client = client;
-            Volatile.Write(ref _connected, true);
-            _logger.LogInformation("GCUBridge MQTT 已连接 ({Host}:{Port}, clientId={ClientId})",
-                _host, _port, _clientId);
+            throw new InvalidOperationException(
+                $"GCUBridge MQTT 无可用 PluginClient 槽位（已尝试: {string.Join(", ", rejected)}）");
+        }
+    }
+
+    private static void CloseClient(MqttClient? client)
+    {
+        if (client is null) return;
+        try
+        {
+            // M2Mqtt.Net 4.3.0.0: CONNACK 被拒时 ReceiveThread 已启动，IsConnected 仍为 false；
+            // 公开 Disconnect() 无法可靠清理，此私有 Close() 才会停止线程并关闭 channel。
+            MqttCloseMethod.Invoke(client, null);
+        }
+        catch
+        {
+            // DLL 将来变更时的尽力回退；正常路径不会走到这里。
+            try { client.Disconnect(); } catch { }
         }
     }
 
@@ -165,23 +231,31 @@ public sealed class VendorMqttControl : IDisposable
 
             ushort messageId = 0;
             using var published = new ManualResetEventSlim(false);
-            client.MqttMsgPublished += (_, args) =>
+            void OnPublished(object sender, MqttMsgPublishedEventArgs args)
             {
                 if (args.MessageId == messageId && args.IsPublished)
                 {
                     published.Set();
                 }
-            };
+            }
 
-            messageId = client.Publish(
-                "Fan/Control",
-                payloadBytes,
-                MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE,
-                retain: false);
-
-            if (!published.Wait(TimeSpan.FromSeconds(3)))
+            client.MqttMsgPublished += OnPublished;
+            try
             {
-                throw new TimeoutException("GCUBridge 未确认收到控制命令。");
+                messageId = client.Publish(
+                    topic,
+                    payloadBytes,
+                    MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE,
+                    retain: false);
+
+                if (!published.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    throw new TimeoutException("GCUBridge 未确认收到控制命令。");
+                }
+            }
+            finally
+            {
+                client.MqttMsgPublished -= OnPublished;
             }
         }
     }
@@ -205,9 +279,11 @@ public sealed class VendorMqttControl : IDisposable
     {
         lock (_sync)
         {
-            try { _client?.Disconnect(); } catch { }
+            var client = _client;
             _client = null;
+            _activeClientId = null;
             Volatile.Write(ref _connected, false);
+            CloseClient(client);
         }
     }
 }

@@ -10,6 +10,7 @@ namespace CCU.Shared.IPC;
 public class PipeClient : IDisposable
 {
     private readonly string _pipeName;
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
     private NamedPipeClientStream? _stream;
 
     public bool IsConnected => _stream?.IsConnected == true;
@@ -31,44 +32,57 @@ public class PipeClient : IDisposable
     /// <summary>
     /// 发送消息并等待响应
     /// </summary>
-    public async Task<IpcMessage?> SendAsync(IpcMessage message)
-    {
-        if (_stream == null || !_stream.IsConnected)
-            return null;
+    public async Task<IpcMessage?> SendAsync(IpcMessage message) =>
+        await SendAsync(message, TimeSpan.FromSeconds(20));
 
+    public async Task<IpcMessage?> SendAsync(IpcMessage message, TimeSpan timeout)
+    {
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        await _sendGate.WaitAsync(timeoutCts.Token);
         try
         {
-            var json = JsonSerializer.Serialize(message);
-            byte[] msgBytes = Encoding.UTF8.GetBytes(json);
-            byte[] lenPrefix = BitConverter.GetBytes(msgBytes.Length);
+            if (_stream == null || !_stream.IsConnected)
+                return null;
 
-            // 写: 4 字节长度 + 消息体
-            await _stream.WriteAsync(lenPrefix, 0, 4);
-            await _stream.WriteAsync(msgBytes, 0, msgBytes.Length);
-            await _stream.FlushAsync();
-
-            // 读响应长度
-            byte[] respLen = new byte[4];
-            if (await _stream.ReadAsync(respLen, 0, 4) != 4) return null;
-            int len = BitConverter.ToInt32(respLen, 0);
-            if (len <= 0 || len > 65536) return null;
-
-            // 读响应体
-            byte[] respBuf = new byte[len];
-            int total = 0;
-            while (total < len)
+            try
             {
-                int n = await _stream.ReadAsync(respBuf, total, len - total);
-                if (n <= 0) return null;
-                total += n;
-            }
+                var json = JsonSerializer.Serialize(message);
+                byte[] msgBytes = Encoding.UTF8.GetBytes(json);
+                byte[] lenPrefix = BitConverter.GetBytes(msgBytes.Length);
 
-            string respJson = Encoding.UTF8.GetString(respBuf, 0, total);
-            return JsonSerializer.Deserialize<IpcMessage>(respJson);
+                // 写: 4 字节长度 + 消息体
+                await _stream.WriteAsync(lenPrefix, timeoutCts.Token);
+                await _stream.WriteAsync(msgBytes, timeoutCts.Token);
+                await _stream.FlushAsync(timeoutCts.Token);
+
+                // 读响应长度
+                byte[] respLen = new byte[4];
+                if (await _stream.ReadAsync(respLen, timeoutCts.Token) != 4) return null;
+                int len = BitConverter.ToInt32(respLen, 0);
+                if (len <= 0 || len > 65536) return null;
+
+                // 读响应体
+                byte[] respBuf = new byte[len];
+                int total = 0;
+                while (total < len)
+                {
+                    int n = await _stream.ReadAsync(
+                        respBuf.AsMemory(total, len - total), timeoutCts.Token);
+                    if (n <= 0) return null;
+                    total += n;
+                }
+
+                string respJson = Encoding.UTF8.GetString(respBuf, 0, total);
+                return JsonSerializer.Deserialize<IpcMessage>(respJson);
+            }
+            catch
+            {
+                return null;
+            }
         }
-        catch
+        finally
         {
-            return null;
+            _sendGate.Release();
         }
     }
 

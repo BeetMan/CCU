@@ -72,15 +72,56 @@ root.AddCommand(statusCmd);
 var modeCmd = new Command("mode", "性能模式切换");
 var modeArg = new Argument<string>("mode", "office | gaming | turbo | custom");
 modeCmd.AddArgument(modeArg);
+var modeProfile = new Option<int?>("--profile", "自定义 Profile 编号 (1-5，custom 必填)");
+var modeVariant = new Option<string>("--variant", () => "extreme", "狂暴细分: silent | extreme");
 var modeJson = new Option<bool>("--json", () => false, "JSON 输出");
+modeCmd.AddOption(modeProfile);
+modeCmd.AddOption(modeVariant);
 modeCmd.AddOption(modeJson);
-modeCmd.SetHandler(async (mode, json) =>
+modeCmd.SetHandler(async (mode, profile, variant, json) =>
 {
     int m = ModeToInt(mode);
-    if (m < 0){ OutputError(json, $"无效模式: {mode}"); return; }
-    var (ok, err, resp) = await SendCommand(IpcMessageType.SetPerformanceMode, new { Mode = m });
-    Output(json, new { success = ok, mode, modeValue = m, error = err });
-}, modeArg, modeJson);
+    if (m < 0) { OutputError(json, $"无效模式: {mode}"); return; }
+
+    int? profileIndex = null;
+    if (m == 3)
+    {
+        if (profile is null or < 1 or > 5)
+        {
+            OutputError(json, "custom 模式必须指定 --profile 1..5");
+            return;
+        }
+        profileIndex = profile.Value - 1;
+    }
+
+    int? silent = null;
+    if (m == 2)
+    {
+        silent = variant.ToLowerInvariant() switch
+        {
+            "silent" => 1,
+            "extreme" => 0,
+            _ => null
+        };
+        if (silent is null)
+        {
+            OutputError(json, $"无效狂暴细分: {variant}（应为 silent 或 extreme）");
+            return;
+        }
+    }
+
+    var (ok, err, _) = await SendCommand(IpcMessageType.SetPerformanceMode,
+        new { Mode = m, ProfileIndex = profileIndex, Silent = silent });
+    Output(json, new
+    {
+        success = ok,
+        mode,
+        modeValue = m,
+        profile,
+        variant = m == 2 ? variant : null,
+        error = err
+    });
+}, modeArg, modeProfile, modeVariant, modeJson);
 root.AddCommand(modeCmd);
 
 // ========================
@@ -205,18 +246,32 @@ var rgbBright = new Option<int>("--bright", () => 4, "亮度 (0-4, 原厂 25% �
 rgbCmd.AddOption(rgbBright);
 var rgbColor = new Option<string?>("--color", () => null, "颜色 R,G,B");
 rgbCmd.AddOption(rgbColor);
+var rgbDirection = new Option<string?>(
+    "--direction", () => null, "Wave 方向: left-right | right-left (默认 left-right)");
+rgbCmd.AddOption(rgbDirection);
 var rgbJson = new Option<bool>("--json", () => false, "JSON 输出");
 rgbCmd.AddOption(rgbJson);
-rgbCmd.SetHandler(async (effect, speed, bright, color, json) =>
+rgbCmd.SetHandler(async (effect, speed, bright, color, direction, json) =>
 {
     var vendorEffect = effect.ToLowerInvariant() switch
     {
+        "off" => "",
         "static" => "Single",
         "neon" => "Twinkling",
         var e => string.Concat(e[0].ToString().ToUpper(), e[1..])
     };
     if (vendorEffect != "" && !new[] { "Single", "Breathing", "Wave", "ColorfulWave", "Reactive", "Rainbow", "Ripple", "Raindrop", "Marquee", "Impact", "Spark", "Aurora", "Music", "Gaming", "Flash", "Mix", "Twinkling", "Dawn", "Sine", "Interlace", "Diagonal" }.Contains(vendorEffect))
     { OutputError(json, $"无效灯效: {effect}"); return; }
+
+    string? vendorDirection = direction?.ToLowerInvariant() switch
+    {
+        null or "" => null,
+        "left-right" or "leftright" => "LeftRight",
+        "right-left" or "rightleft" => "RightLeft",
+        _ => "Invalid"
+    };
+    if (vendorDirection == "Invalid")
+    { OutputError(json, $"无效 Wave 方向: {direction}"); return; }
 
     byte r = 0, g = 212, b = 170;
     if (!string.IsNullOrEmpty(color))
@@ -229,10 +284,11 @@ rgbCmd.SetHandler(async (effect, speed, bright, color, json) =>
     {
         Effect = power ? vendorEffect : null,
         R = (int)r, G = (int)g, B = (int)b,
-        Brightness = bright, Speed = speed, Power = power
+        Brightness = bright, Speed = speed, Power = power,
+        Direction = vendorDirection
     });
-    Output(json, new { success = ok, effect, error = err });
-}, rgbEffect, rgbSpeed, rgbBright, rgbColor, rgbJson);
+    Output(json, new { success = ok, effect, direction = vendorDirection, error = err });
+}, rgbEffect, rgbSpeed, rgbBright, rgbColor, rgbDirection, rgbJson);
 root.AddCommand(rgbCmd);
 
 // ========================
