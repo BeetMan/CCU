@@ -1,15 +1,18 @@
-# CCU 冒烟测试 — 需要新版服务 (v22+) 部署后运行
+﻿# CCU 冒烟测试 — 需要新版服务 (v22+) 部署后运行
 # 用法: powershell -ExecutionPolicy Bypass -File tests\smoke.ps1 [-WithModeSwitch]
 # 默认只跑只读检查; -WithModeSwitch 额外做一轮模式切换往返 (需要用户确认空闲)
 
 param(
-    [switch]$WithModeSwitch
+    [switch]$WithModeSwitch,
+    [string]$Version = "v22"
 )
 
 $ErrorActionPreference = 'Stop'
-$cli = "src\CCU.Cli\bin\Debug\net8.0-windows\CCU.Cli.exe"
+$cli = "publish\CCU.Cli.$Version\CCU.Cli.exe"
+if (-not (Test-Path $cli)) { $cli = "src\CCU.Cli\bin\Debug\net8.0-windows\CCU.Cli.exe" }
 if (-not (Test-Path $cli)) { $cli = "src\CCU.Cli\bin\Release\net8.0-windows\CCU.Cli.exe" }
-if (-not (Test-Path $cli)) { Write-Host "✗ 先 dotnet build CCU.Cli" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path $cli)) { Write-Host "✗ 未找到已发布或已构建的 CCU.Cli" -ForegroundColor Red; exit 1 }
+Write-Host "CLI: $cli" -ForegroundColor DarkGray
 
 $fail = 0
 function Check($name, $scriptBlock) {
@@ -48,14 +51,19 @@ if ($WithModeSwitch) {
     $original = & $cli status --json | ConvertFrom-Json
     Write-Host "当前: $($original.mode)"
 
-    Check "切到游戏模式" { (& $cli mode gaming --json).success }
+    Check "切到游戏模式" {
+        $result = (& $cli mode gaming --json 2>&1) | ConvertFrom-Json
+        $result.success -eq $true
+    }
     Start-Sleep 1
     Check "切回原模式" {
         $back = @('office','gaming','turbo')[$original.operatingMode]
-        (& $cli mode $back --json).success
+        if (-not $back) { throw "当前模式 $($original.operatingMode) 无自动回退映射，请手动恢复" }
+        $result = (& $cli mode $back --json 2>&1) | ConvertFrom-Json
+        $result.success -eq $true
     }
     Start-Sleep 1
-    $final = & $cli status --json
+    $final = (& $cli status --json 2>&1) | ConvertFrom-Json
     Check "状态回读一致" { $final.operatingMode -eq $original.operatingMode }
 }
 
