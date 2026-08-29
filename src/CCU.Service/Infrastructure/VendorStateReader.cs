@@ -17,16 +17,28 @@ public sealed class VendorStateReader
     private IReadOnlyDictionary<int, string> _aliases = new Dictionary<int, string>();
     private string? _installDir;
 
-    public VendorStateReader(ILogger<VendorStateReader> logger)
+    public VendorStateReader(ILogger<VendorStateReader> logger, string? installDirOverride = null,
+        string? settingsDatPathOverride = null)
     {
         _logger = logger;
+        _installDir = installDirOverride;       // 测试注入点；生产为 null 时自动发现
+        _settingsDatPath = settingsDatPathOverride;
     }
 
+    private readonly string? _settingsDatPath;
+
     /// <summary>智控中心配置目录（懒发现，找不到返回 null）。</summary>
-    private string? Install =>
-        _installDir ??= Directory.GetDirectories(@"C:\Program Files\OEM")
-            .Select(path => Path.Combine(path, "AiStoneService", "MyControlCenter"))
-            .FirstOrDefault(Directory.Exists);
+    private string? Install
+    {
+        get
+        {
+            if (_installDir != null) return _installDir;
+            _installDir = Directory.GetDirectories(@"C:\Program Files\OEM")
+                .Select(path => Path.Combine(path, "AiStoneService", "MyControlCenter"))
+                .FirstOrDefault(Directory.Exists);
+            return _installDir;
+        }
+    }
 
     /// <summary>MainOption.json 路径；智控中心未安装时为 null。</summary>
     public string? MainOptionPath
@@ -137,7 +149,7 @@ public sealed class VendorStateReader
     {
         try
         {
-            var path = Path.Combine(
+            var path = _settingsDatPath ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Packages", PackageFamilyName, "Settings", "settings.dat");
             if (!File.Exists(path)) return _aliases;
@@ -148,34 +160,8 @@ public sealed class VendorStateReader
             stream.CopyTo(memory);
 
             var hiveText = Encoding.Unicode.GetString(memory.ToArray());
-            const string customMarker = "\"Mode\": \"Custom\"";
-            var markerIndex = hiveText.IndexOf(customMarker, StringComparison.Ordinal);
-            if (markerIndex < 0) return _aliases;
 
-            var arrayStart = hiveText.LastIndexOf('[', markerIndex);
-            var arrayEnd = hiveText.IndexOf(']', markerIndex);
-            if (arrayStart < 0 || arrayEnd <= arrayStart) return _aliases;
-
-            var profiles = JsonNode.Parse(hiveText[arrayStart..(arrayEnd + 1)])?.AsArray();
-            if (profiles is null) return _aliases;
-
-            var aliases = new Dictionary<int, string>();
-            foreach (var profile in profiles)
-            {
-                if (!string.Equals(profile?["Mode"]?.GetValue<string>(), "Custom",
-                        StringComparison.OrdinalIgnoreCase) ||
-                    !int.TryParse(profile?["Index"]?.GetValue<string>(), out var index))
-                {
-                    continue;
-                }
-
-                var alias = profile?["AliasName"]?.GetValue<string>()?.Trim();
-                if (!string.IsNullOrWhiteSpace(alias))
-                {
-                    aliases[index] = alias;
-                }
-            }
-
+            var aliases = ParseAliasesFromHive(hiveText);
             if (aliases.Count > 0)
             {
                 _logger.LogDebug("从智控中心 settings.dat 读取到 {Count} 个自定义 Profile 别名", aliases.Count);
@@ -187,6 +173,41 @@ public sealed class VendorStateReader
             _logger.LogDebug(ex, "settings.dat 别名读取失败，沿用缓存");
         }
         return _aliases;
+    }
+
+    /// <summary>
+    /// 从 settings.dat 蜂巢文本中提取自定义 Profile 别名（静态纯函数，便于单测）。
+    /// </summary>
+    public static IReadOnlyDictionary<int, string> ParseAliasesFromHive(string hiveText)
+    {
+        var aliases = new Dictionary<int, string>();
+        const string customMarker = "\"Mode\": \"Custom\"";
+        var markerIndex = hiveText.IndexOf(customMarker, StringComparison.Ordinal);
+        if (markerIndex < 0) return aliases;
+
+        var arrayStart = hiveText.LastIndexOf('[', markerIndex);
+        var arrayEnd = hiveText.IndexOf(']', markerIndex);
+        if (arrayStart < 0 || arrayEnd <= arrayStart) return aliases;
+
+        var profiles = JsonNode.Parse(hiveText[arrayStart..(arrayEnd + 1)])?.AsArray();
+        if (profiles is null) return aliases;
+
+        foreach (var profile in profiles)
+        {
+            if (!string.Equals(profile?["Mode"]?.GetValue<string>(), "Custom",
+                    StringComparison.OrdinalIgnoreCase) ||
+                !int.TryParse(profile?["Index"]?.GetValue<string>(), out var index))
+            {
+                continue;
+            }
+
+            var alias = profile?["AliasName"]?.GetValue<string>()?.Trim();
+            if (!string.IsNullOrWhiteSpace(alias))
+            {
+                aliases[index] = alias;
+            }
+        }
+        return aliases;
     }
 
     /// <summary>

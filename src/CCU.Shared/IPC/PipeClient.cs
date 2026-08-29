@@ -74,4 +74,14 @@ public class PipeClient : IDisposable
 
     public void Disconnect() => _stream?.Close();
     public void Dispose() => _stream?.Dispose();
+
+    /// <summary>测试辅助：绕过类型化协议直接写原始帧（坏消息/边界测试用）。</summary>
+    public async Task TestWriteRawAsync(byte[] lenPrefix, byte[] body)
+    {
+        if (_stream == null || !_stream.IsConnected)
+            throw new InvalidOperationException("pipe not connected");
+        await _stream.WriteAsync(lenPrefix, 0, lenPrefix.Length);
+        await _stream.WriteAsync(body, 0, body.Length);
+        await _stream.FlushAsync();
+    }
 }

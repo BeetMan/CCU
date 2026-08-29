@@ -8,17 +8,19 @@ namespace CCU.Service.Core;
 /// </summary>
 public sealed class AppProfileStore
 {
-    private static readonly string StorePath =
+    private static readonly string DefaultStorePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "CCU_Alternative", "app-profiles.json");
 
     private readonly object _sync = new();
     private AppBindingSettings _settings = new();
+    private readonly string _storePath;
     private readonly ILogger<AppProfileStore> _logger;
 
-    public AppProfileStore(ILogger<AppProfileStore> logger)
+    public AppProfileStore(ILogger<AppProfileStore> logger, string? storePath = null)
     {
         _logger = logger;
+        _storePath = storePath ?? DefaultStorePath; // 测试可注入临时路径
         Load();
     }
 
@@ -76,8 +78,8 @@ public sealed class AppProfileStore
     {
         try
         {
-            if (!File.Exists(StorePath)) return;
-            var loaded = JsonSerializer.Deserialize<AppBindingSettings>(File.ReadAllText(StorePath));
+            if (!File.Exists(_storePath)) return;
+            var loaded = JsonSerializer.Deserialize<AppBindingSettings>(File.ReadAllText(_storePath));
             if (loaded is not null)
             {
                 lock (_sync) _settings = loaded;
@@ -97,11 +99,11 @@ public sealed class AppProfileStore
         {
             AppBindingSettings snapshot;
             lock (_sync) snapshot = _settings;
-            var dir = Path.GetDirectoryName(StorePath)!;
+            var dir = Path.GetDirectoryName(_storePath)!;
             Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(StorePath, json);
+            File.WriteAllText(_storePath, json);
         }
         catch (Exception ex)
         {

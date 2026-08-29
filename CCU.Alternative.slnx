@@ -8,4 +8,7 @@
     <Project Path="src/MqttProbe/MqttProbe.csproj" />
     <Project Path="src/QuickDiag/QuickDiag.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CCU.Tests/CCU.Tests.csproj" />
+  </Folder>
 </Solution>
